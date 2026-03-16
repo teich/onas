@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh:*)",
+      "Bash(node:*)",
+      "Bash(apt-get install:*)",
+      "Bash(export:*)",
+      "Bash(curl:*)",
+      "Bash(pkill:*)",
+      "Bash(systemctl daemon-reload:*)",
+      "Bash(cd:*)"
+    ]
+  }
+}
