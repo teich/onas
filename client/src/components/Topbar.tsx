@@ -1,4 +1,4 @@
-type View = 'storage' | 'shares' | 'users';
+export type View = 'storage' | 'shares' | 'users' | 'host';
 
 interface TopbarProps {
   view: View;
@@ -19,6 +19,7 @@ export function Topbar({ view, setView, timestamp, refreshing, onRefresh }: Topb
         <div className="topbar-host">192.168.2.2</div>
         <nav className="nav-tabs">
           <button className={`nav-tab ${view === 'storage' ? 'active' : ''}`} onClick={() => setView('storage')}>Storage</button>
+          <button className={`nav-tab ${view === 'host' ? 'active' : ''}`} onClick={() => setView('host')}>Host</button>
           <button className={`nav-tab ${view === 'shares' ? 'active' : ''}`} onClick={() => setView('shares')}>Shares</button>
           <button className={`nav-tab ${view === 'users' ? 'active' : ''}`} onClick={() => setView('users')}>Users</button>
         </nav>

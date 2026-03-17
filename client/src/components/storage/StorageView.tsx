@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PoolCard } from './PoolCard';
 import { IoSection, HISTORY_LEN as _HISTORY_LEN } from './IoSection';
 import { DatasetTable } from './DatasetTable';
 import { GuestTable, isGuestDataset } from './GuestTable';
+import { SmartSection } from './SmartSection';
 import { DetailPanel } from './DetailPanel';
-import { fetchGuests } from '../../lib/api';
-import type { Pool, Dataset, Snapshot, Guest } from '../../lib/types';
+import { fetchGuests, fetchSmart } from '../../lib/api';
+import type { Pool, Dataset, Snapshot, Guest, SmartDisk } from '../../lib/types';
 
 interface IoPoint {
   readBytes: number;
@@ -42,9 +43,30 @@ export function StorageView({ data, loading, error, ioHistory, onSnapshotCreated
   const [search, setSearch] = useState('');
   const [selectedDs, setSelectedDs] = useState<Dataset | null>(null);
   const [guests, setGuests] = useState<Guest[]>([]);
+  const [smartDisks, setSmartDisks] = useState<SmartDisk[]>([]);
+  const [smartLoading, setSmartLoading] = useState(false);
+  const [smartError, setSmartError] = useState<string | null>(null);
+  const [smartLoaded, setSmartLoaded] = useState(false);
 
-  useEffect(() => {
+  const refreshGuests = useCallback(() => {
     fetchGuests().then(r => setGuests(r.guests ?? [])).catch(() => {});
+  }, []);
+
+  useEffect(() => { refreshGuests(); }, [refreshGuests]);
+
+  const loadSmart = useCallback(async () => {
+    setSmartLoading(true);
+    setSmartError(null);
+    try {
+      const d = await fetchSmart();
+      setSmartDisks(d.disks);
+      setSmartLoaded(true);
+    } catch (e) {
+      setSmartError((e as Error).message);
+      setSmartLoaded(true);
+    } finally {
+      setSmartLoading(false);
+    }
   }, []);
 
   // Guest datasets (fast/subvol-* and fast/vm-*) go to GuestTable; everything else stays in DatasetTable
@@ -102,6 +124,27 @@ export function StorageView({ data, loading, error, ioHistory, onSnapshotCreated
 
         <section>
           <div className="section-header">
+            <div className="section-title">Disk Health</div>
+            <div className="section-line" />
+            {smartLoaded && !smartLoading && (
+              <div className="section-title">{smartDisks.length} disks</div>
+            )}
+            <button
+              className="refresh-btn"
+              onClick={loadSmart}
+              disabled={smartLoading}
+              style={{ padding: '4px 12px', fontSize: 10 }}
+            >
+              {smartLoading ? 'loading…' : smartLoaded ? 'refresh' : 'load smart'}
+            </button>
+          </div>
+          {(smartLoaded || smartLoading) && (
+            <SmartSection disks={smartDisks} loading={smartLoading} error={smartError} />
+          )}
+        </section>
+
+        <section>
+          <div className="section-header">
             <div className="section-title">I/O Activity</div>
             <div className="section-line" />
             <div className="section-title">2s live</div>
@@ -116,7 +159,7 @@ export function StorageView({ data, loading, error, ioHistory, onSnapshotCreated
             {data && <div className="section-title">{guestCount} guests · {guestDatasets.length} disks</div>}
           </div>
           {data && filter !== 'bulk' && (
-            <GuestTable guests={guests} datasets={filteredGuestDatasets} />
+            <GuestTable guests={guests} datasets={filteredGuestDatasets} onRefresh={refreshGuests} />
           )}
         </section>
 

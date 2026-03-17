@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Topbar } from './components/Topbar';
+import type { View } from './components/Topbar';
 import { StorageView } from './components/storage/StorageView';
 import { SharesView } from './components/shares/SharesView';
 import { UsersView } from './components/users/UsersView';
-import { fetchZfs } from './lib/api';
-import type { Pool, Dataset, Snapshot } from './lib/types';
-
-type View = 'storage' | 'shares' | 'users';
+import { HostView } from './components/host/HostView';
+import { fetchZfs, fetchHost } from './lib/api';
+import type { Pool, Dataset, Snapshot, HostHealth } from './lib/types';
 
 const HISTORY_LEN = 60;
 
@@ -24,6 +24,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [ioHistory, setIoHistory] = useState<Record<string, IoPoint[]>>({});
+  const [hostData, setHostData] = useState<HostHealth | null>(null);
 
   // Poll iostat every 2s
   useEffect(() => {
@@ -51,6 +52,21 @@ export function App() {
     const id = setInterval(poll, 2000);
     return () => { cancelled = true; clearInterval(id); };
   }, []);
+
+  // Poll host health every 5s when on host view
+  useEffect(() => {
+    if (view !== 'host') return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const d = await fetchHost();
+        if (!cancelled) setHostData(d);
+      } catch (_) { /* ignore */ }
+    };
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [view]);
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -86,6 +102,9 @@ export function App() {
           ioHistory={ioHistory}
           onSnapshotCreated={() => load(true)}
         />
+      )}
+      {view === 'host' && (
+        <HostView data={hostData} />
       )}
       {view === 'shares' && (
         <SharesView datasets={data?.datasets ?? []} />

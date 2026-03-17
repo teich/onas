@@ -64,3 +64,25 @@ export interface SmbUser {
   fullName: string;
   flags: string;
 }
+
+export interface HostHealth {
+  cpu: { pct: number; cores: number };
+  mem: { totalBytes: number; usedBytes: number; availBytes: number };
+  swap: { totalBytes: number; usedBytes: number };
+  load: { load1: number; load5: number; load15: number };
+  uptimeSeconds: number;
+  timestamp: string;
+}
+
+export interface SmartDisk {
+  device: string;
+  model: string;
+  serial: string;
+  type: 'ata' | 'nvme' | 'unknown';
+  tempC: number | null;
+  healthPassed: boolean | null;
+  smartStatus: string;
+  powerOnHours: number | null;
+  reallocatedSectors: number | null;
+  error?: string;
+}

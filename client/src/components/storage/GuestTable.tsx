@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import type { Guest, Dataset } from '../../lib/types';
+import { guestAction } from '../../lib/api';
 import { parseSize } from '../../lib/helpers';
 
 // Match fast/subvol-{vmid}-disk-{n} or fast/vm-{vmid}-disk-{n}
@@ -85,7 +87,79 @@ function DiskBar({ ds }: { ds: Dataset }) {
   );
 }
 
-function GuestRowEl({ row }: { row: GuestRow }) {
+function GuestControls({ row, onRefresh }: { row: GuestRow; onRefresh: () => void }) {
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<string | null>(null);
+
+  const isRunning = row.status === 'running';
+
+  const doAction = async (action: string) => {
+    setLoadingAction(action);
+    setConfirmAction(null);
+    setRowError(null);
+    try {
+      await guestAction(row.vmid, row.type, action);
+      await new Promise(r => setTimeout(r, 900));
+      onRefresh();
+    } catch (e) {
+      setRowError((e as Error).message.slice(0, 80));
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const requestAction = (action: string) => {
+    if (action === 'stop' || action === 'shutdown') {
+      setConfirmAction(action);
+    } else {
+      doAction(action);
+    }
+  };
+
+  const rebootAction = row.type === 'vm' ? 'reset' : 'reboot';
+
+  return (
+    <div>
+      {loadingAction ? (
+        <div className="guest-ctrl-strip">
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', padding: '3px 8px' }}>
+            {loadingAction}…
+          </span>
+        </div>
+      ) : confirmAction ? (
+        <div className="guest-ctrl-confirm">
+          <span className="guest-ctrl-confirm-label">confirm {confirmAction}?</span>
+          <button className="guest-ctrl-btn stop" onClick={() => doAction(confirmAction)}>yes</button>
+          <button className="guest-ctrl-btn" onClick={() => setConfirmAction(null)}>no</button>
+        </div>
+      ) : (
+        <div className="guest-ctrl-strip">
+          {isRunning ? (
+            <>
+              <button className="guest-ctrl-btn reboot" onClick={() => requestAction(rebootAction)}>
+                {rebootAction}
+              </button>
+              <button className="guest-ctrl-btn shutdown" onClick={() => requestAction('shutdown')}>
+                shutdown
+              </button>
+              <button className="guest-ctrl-btn stop" onClick={() => requestAction('stop')}>
+                stop
+              </button>
+            </>
+          ) : (
+            <button className="guest-ctrl-btn start" onClick={() => requestAction('start')}>
+              start
+            </button>
+          )}
+        </div>
+      )}
+      {rowError && <div className="guest-ctrl-error">{rowError}</div>}
+    </div>
+  );
+}
+
+function GuestRowEl({ row, onRefresh }: { row: GuestRow; onRefresh: () => void }) {
   const allVols = row.disks.every(d => d.dataset.type === 'volume');
   const totalUsed = row.disks.reduce((s, d) => s + parseSize(d.dataset.used), 0);
   const totalAvail = allVols ? 0 : row.disks.reduce((s, d) => s + parseSize(d.dataset.avail), 0);
@@ -97,10 +171,7 @@ function GuestRowEl({ row }: { row: GuestRow }) {
   }
 
   return (
-    <div style={{
-      borderBottom: '1px solid var(--border)',
-      padding: '10px 16px',
-    }}>
+    <div style={{ borderBottom: '1px solid var(--border)', padding: '10px 16px' }}>
       {/* Guest header row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: row.disks.length > 1 ? 8 : 0 }}>
         <StatusDot status={row.status} />
@@ -114,8 +185,8 @@ function GuestRowEl({ row }: { row: GuestRow }) {
         <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text2)', marginRight: 8 }}>
           {row.disks.length} {row.disks.length === 1 ? 'disk' : 'disks'}
         </span>
-        {/* Total usage bar */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {/* Total usage */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 12 }}>
           {pct !== null && (
             <div className="size-mini-bar" style={{ width: 52 }}>
               <div className="size-mini-fill fast-fill" style={{ width: `${pct}%` }} />
@@ -130,6 +201,8 @@ function GuestRowEl({ row }: { row: GuestRow }) {
             </span>
           )}
         </div>
+        {/* Controls */}
+        <GuestControls row={row} onRefresh={onRefresh} />
       </div>
 
       {/* Per-disk breakdown (only if multiple disks) */}
@@ -152,10 +225,10 @@ function GuestRowEl({ row }: { row: GuestRow }) {
 interface GuestTableProps {
   guests: Guest[];
   datasets: Dataset[];
+  onRefresh: () => void;
 }
 
-export function GuestTable({ guests, datasets }: GuestTableProps) {
-  // Build guest rows by grouping datasets by vmid
+export function GuestTable({ guests, datasets, onRefresh }: GuestTableProps) {
   const byVmid = new Map<number, GuestDisk[]>();
   for (const ds of datasets) {
     const parsed = parseGuestDataset(ds.name);
@@ -188,8 +261,9 @@ export function GuestTable({ guests, datasets }: GuestTableProps) {
       <div className="table-head" style={{ display: 'flex', alignItems: 'center', padding: '8px 16px', gap: 10 }}>
         <span className="th" style={{ flex: 1 }}>Guest</span>
         <span className="th">Storage</span>
+        <span className="th" style={{ minWidth: 140 }}>Controls</span>
       </div>
-      {rows.map(row => <GuestRowEl key={row.vmid} row={row} />)}
+      {rows.map(row => <GuestRowEl key={row.vmid} row={row} onRefresh={onRefresh} />)}
     </div>
   );
 }

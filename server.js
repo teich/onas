@@ -248,6 +248,156 @@ app.post('/api/snapshot', express.json(), async (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
+// ---- Guest Actions ----
+app.post('/api/guests/:id/action', express.json(), async (req, res) => {
+  const vmid = parseInt(req.params.id, 10);
+  if (!vmid || vmid < 1 || vmid > 999999) return res.status(400).json({ error: 'Invalid VMID' });
+
+  const { type, action } = req.body || {};
+  const lxcCmds = { start: 'pct start', stop: 'pct stop', shutdown: 'pct shutdown', reboot: 'pct reboot' };
+  const vmCmds  = { start: 'qm start',  stop: 'qm stop',  shutdown: 'qm shutdown',  reset: 'qm reset' };
+
+  let cmd;
+  if (type === 'lxc' && lxcCmds[action]) cmd = `${lxcCmds[action]} ${vmid}`;
+  else if (type === 'vm' && vmCmds[action]) cmd = `${vmCmds[action]} ${vmid}`;
+  else return res.status(400).json({ error: 'Invalid type or action' });
+
+  try {
+    await sshExec(cmd).catch(err => {
+      // Treat "already running/stopped" as non-fatal
+      if (/already (running|stopped|shutdown)|not running|already running/i.test(err.message)) return;
+      throw err;
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Host Health ----
+app.get('/api/host', async (req, res) => {
+  try {
+    const [memRaw, loadRaw, uptimeRaw, nProcRaw, cpuRaw] = await Promise.all([
+      sshExec('cat /proc/meminfo'),
+      sshExec('cat /proc/loadavg'),
+      sshExec('cat /proc/uptime'),
+      sshExec('nproc'),
+      sshExec(
+        "awk '/^cpu /{u=$2+$4;t=$2+$3+$4+$5+$6+$7+$8;printf \"%d %d\\n\",u,t}' /proc/stat;" +
+        "sleep 0.5;" +
+        "awk '/^cpu /{u=$2+$4;t=$2+$3+$4+$5+$6+$7+$8;printf \"%d %d\\n\",u,t}' /proc/stat"
+      ),
+    ]);
+
+    // /proc/meminfo (values in kB)
+    const memMap = {};
+    for (const line of memRaw.trim().split('\n')) {
+      const m = line.match(/^(\w+):\s+(\d+)/);
+      if (m) memMap[m[1]] = parseInt(m[2]) * 1024;
+    }
+    const memTotal = memMap.MemTotal  || 0;
+    const memAvail = memMap.MemAvailable || 0;
+    const swapTotal = memMap.SwapTotal || 0;
+    const swapFree  = memMap.SwapFree  || 0;
+
+    // /proc/loadavg
+    const [load1, load5, load15] = loadRaw.trim().split(' ').map(parseFloat);
+
+    // /proc/uptime
+    const uptimeSeconds = Math.floor(parseFloat(uptimeRaw.trim().split(' ')[0]));
+
+    // CPU (two samples 500 ms apart)
+    const cpuLines = cpuRaw.trim().split('\n');
+    const [u1, t1] = cpuLines[0].split(' ').map(Number);
+    const [u2, t2] = cpuLines[1] ? cpuLines[1].split(' ').map(Number) : [u1, t1 + 1];
+    const cpuPct = t2 - t1 > 0 ? ((u2 - u1) / (t2 - t1)) * 100 : 0;
+
+    res.json({
+      cpu: { pct: Math.round(cpuPct * 10) / 10, cores: parseInt(nProcRaw.trim()) || 1 },
+      mem: { totalBytes: memTotal, usedBytes: memTotal - memAvail, availBytes: memAvail },
+      swap: { totalBytes: swapTotal, usedBytes: swapTotal - swapFree },
+      load: { load1, load5, load15 },
+      uptimeSeconds,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Disk SMART ----
+app.get('/api/smart', async (req, res) => {
+  try {
+    const statusRaw = await sshExec('zpool status -P');
+    const diskSet = new Set();
+    for (const line of statusRaw.split('\n')) {
+      const m = line.match(/\s+(\/dev\/disk\/by-id\/[^\s]+)\s+/);
+      if (m) diskSet.add(m[1].replace(/-part\d+$/, ''));
+    }
+    const diskPaths = [...diskSet];
+    if (diskPaths.length === 0) return res.json({ disks: [], timestamp: new Date().toISOString() });
+
+    // Resolve by-id symlinks → real /dev/sdX or /dev/nvmeXnY
+    const realPathsRaw = await sshExec('readlink -f ' + diskPaths.join(' '));
+    const realPaths = realPathsRaw.trim().split('\n');
+
+    function shortDev(real) { return real ? real.replace('/dev/', '') : '?'; }
+    function modelFromPath(byId) {
+      const id = byId.split('/').pop().replace(/^(ata|nvme)-/, '');
+      return id.split('_').slice(0, 3).join(' ').slice(0, 40);
+    }
+
+    const results = await Promise.allSettled(
+      diskPaths.map(dev => sshExec(`smartctl -A -H -j ${dev}`))
+    );
+
+    const disks = results.map((r, i) => {
+      const dev = diskPaths[i];
+      const realPath = realPaths[i] || dev;
+      const isNvme = dev.includes('nvme');
+
+      if (r.status === 'rejected') {
+        return { device: shortDev(realPath), model: modelFromPath(dev), serial: '', type: isNvme ? 'nvme' : 'ata', tempC: null, healthPassed: null, smartStatus: 'ERROR', powerOnHours: null, reallocatedSectors: null, error: r.reason?.message };
+      }
+
+      let d;
+      try { d = JSON.parse(r.value); } catch {
+        return { device: shortDev(realPath), model: modelFromPath(dev), serial: '', type: isNvme ? 'nvme' : 'ata', tempC: null, healthPassed: null, smartStatus: 'ERROR', powerOnHours: null, reallocatedSectors: null, error: 'parse failed' };
+      }
+
+      const model = (d.model_name || d.model_family || modelFromPath(dev)).slice(0, 40);
+      const serial = d.serial_number || '';
+      const tempC = d.temperature?.current ?? null;
+      let powerOnHours = null, reallocSectors = null;
+
+      if (isNvme) {
+        powerOnHours = d.nvme_smart_health_information_log?.power_on_hours ?? null;
+      } else {
+        const attrs = {};
+        for (const a of (d.ata_smart_attributes?.table || [])) attrs[a.id] = a;
+        reallocSectors = attrs[5]?.raw?.value ?? null;
+        powerOnHours = attrs[9]?.raw?.value ?? null;
+      }
+
+      return {
+        device: shortDev(realPath),
+        model,
+        serial,
+        type: isNvme ? 'nvme' : 'ata',
+        tempC,
+        healthPassed: d.smart_status?.passed ?? null,
+        smartStatus: d.smart_status?.passed === true ? 'PASSED' : d.smart_status?.passed === false ? 'FAILED' : 'UNKNOWN',
+        powerOnHours,
+        reallocatedSectors: reallocSectors,
+      };
+    });
+
+    res.json({ disks, timestamp: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---- SMB ----
 
 const SMB_CONF = '/etc/samba/smb.conf';
