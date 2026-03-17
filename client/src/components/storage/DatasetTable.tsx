@@ -13,10 +13,9 @@ interface DatasetTableProps {
 }
 
 function DatasetRow({
-  ds, maxSize, snapCount, selected, onClick,
+  ds, snapCount, selected, onClick,
 }: {
   ds: Dataset;
-  maxSize: number;
   snapCount: number;
   selected: boolean;
   onClick: () => void;
@@ -29,7 +28,9 @@ function DatasetRow({
   const isFast = pool === 'fast';
 
   const usedBytes = parseSize(ds.used);
-  const pct = maxSize > 0 ? Math.min((usedBytes / maxSize) * 100, 100) : 0;
+  const availBytes = parseSize(ds.avail);
+  const totalBytes = usedBytes + availBytes;
+  const pct = totalBytes > 0 ? Math.min((usedBytes / totalBytes) * 100, 100) : 0;
 
   return (
     <div
@@ -74,8 +75,6 @@ export function DatasetTable({
   datasets, snapsByDataset, selectedDs, filter, search,
   onFilterChange, onSearchChange, onSelectDs,
 }: DatasetTableProps) {
-  const maxSize = datasets.reduce((m, ds) => Math.max(m, parseSize(ds.used)), 0);
-
   return (
     <>
       <div className="datasets-controls">
@@ -105,7 +104,6 @@ export function DatasetTable({
             <DatasetRow
               key={ds.name}
               ds={ds}
-              maxSize={maxSize}
               snapCount={snapsByDataset[ds.name] ?? 0}
               selected={selectedDs?.name === ds.name}
               onClick={() => onSelectDs(selectedDs?.name === ds.name ? null : ds)}

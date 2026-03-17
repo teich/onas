@@ -28,6 +28,12 @@ export async function createSnapshot(dataset: string, snapname: string) {
   return res.json();
 }
 
+export async function fetchGuests() {
+  const res = await fetch('/api/guests');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function fetchSmb() {
   const res = await fetch('/api/smb');
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

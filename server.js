@@ -34,6 +34,7 @@ function parseZfsList(raw) {
       refer: parts[3],
       mountpoint: parts[4],
       type: parts[5],
+      volsize: parts[6] === '-' ? null : parts[6],
     };
   });
 }
@@ -159,7 +160,7 @@ app.get('/api/zfs', async (req, res) => {
   try {
     const [zpoolRaw, zfsRaw, statusRaw, snapRaw] = await Promise.all([
       sshExec('zpool list -H -o name,size,alloc,free,frag,cap,dedup,health'),
-      sshExec('zfs list -H -o name,used,avail,refer,mountpoint,type'),
+      sshExec('zfs list -H -o name,used,avail,refer,mountpoint,type,volsize'),
       sshExec('zpool status'),
       sshExec('zfs list -t snapshot -H -p -o name,used,refer,creation'),
     ]);
@@ -183,6 +184,32 @@ app.get('/api/zfs', async (req, res) => {
     res.json({ pools, datasets, snapshots, timestamp: new Date().toISOString() });
   } catch (err) {
     console.error('SSH error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Proxmox guest list (LXC + VMs)
+app.get('/api/guests', async (req, res) => {
+  try {
+    const [pctRaw, qmRaw] = await Promise.all([
+      sshExec('pct list'),
+      sshExec('qm list'),
+    ]);
+    const guests = [];
+    for (const line of pctRaw.trim().split('\n').slice(1).filter(Boolean)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 3) continue;
+      // columns: VMID Status [Lock] Name — name is always last
+      guests.push({ vmid: parseInt(parts[0]), status: parts[1], name: parts[parts.length - 1], type: 'lxc' });
+    }
+    for (const line of qmRaw.trim().split('\n').slice(1).filter(Boolean)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 3) continue;
+      // columns: VMID NAME STATUS MEM BOOTDISK PID
+      guests.push({ vmid: parseInt(parts[0]), name: parts[1], status: parts[2], type: 'vm' });
+    }
+    res.json({ guests });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -370,7 +397,7 @@ app.post('/api/users', express.json(), async (req, res) => {
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
   try {
-    await execLocal(`useradd -M -s /sbin/nologin ${username}`);
+    await execLocal(`useradd -M -s /sbin/nologin -G nasusers ${username}`);
     await new Promise((resolve, reject) => {
       const child = exec(`smbpasswd -a -s ${username}`, (err, stdout, stderr) => {
         if (err) return reject(new Error(stderr || err.message));

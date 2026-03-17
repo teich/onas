@@ -30,6 +30,7 @@ export interface Dataset {
   refer: string;
   mountpoint: string;
   type: string;
+  volsize: string | null;
 }
 
 export interface Snapshot {
@@ -39,6 +40,13 @@ export interface Snapshot {
   usedBytes: number;
   referBytes: number;
   createdAt: string;
+}
+
+export interface Guest {
+  vmid: number;
+  name: string;
+  status: string;
+  type: 'lxc' | 'vm';
 }
 
 export interface Share {

@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PoolCard } from './PoolCard';
 import { IoSection, HISTORY_LEN as _HISTORY_LEN } from './IoSection';
 import { DatasetTable } from './DatasetTable';
+import { GuestTable, isGuestDataset } from './GuestTable';
 import { DetailPanel } from './DetailPanel';
-import type { Pool, Dataset, Snapshot } from '../../lib/types';
+import { fetchGuests } from '../../lib/api';
+import type { Pool, Dataset, Snapshot, Guest } from '../../lib/types';
 
 interface IoPoint {
   readBytes: number;
@@ -39,13 +41,29 @@ export function StorageView({ data, loading, error, ioHistory, onSnapshotCreated
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [selectedDs, setSelectedDs] = useState<Dataset | null>(null);
+  const [guests, setGuests] = useState<Guest[]>([]);
 
-  const filteredDatasets = data?.datasets?.filter(ds => {
+  useEffect(() => {
+    fetchGuests().then(r => setGuests(r.guests ?? [])).catch(() => {});
+  }, []);
+
+  // Guest datasets (fast/subvol-* and fast/vm-*) go to GuestTable; everything else stays in DatasetTable
+  const allDatasets = data?.datasets ?? [];
+  const guestDatasets = allDatasets.filter(ds => isGuestDataset(ds.name));
+  const regularDatasets = allDatasets.filter(ds => !isGuestDataset(ds.name));
+
+  const filteredDatasets = regularDatasets.filter(ds => {
     const pool = ds.name.split('/')[0];
     if (filter !== 'all' && pool !== filter) return false;
     if (search && !ds.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }) ?? [];
+  });
+
+  const filteredGuestDatasets = guestDatasets.filter(ds => {
+    if (filter === 'bulk') return false;
+    if (search && !ds.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
 
   const snapsByDataset: Record<string, number> = {};
   for (const sn of (data?.snapshots ?? [])) {
@@ -54,6 +72,7 @@ export function StorageView({ data, loading, error, ioHistory, onSnapshotCreated
   }
 
   const panelOpen = !!selectedDs;
+  const guestCount = new Set(guestDatasets.map(ds => ds.name.match(/fast\/(?:subvol|vm)-(\d+)/)?.[1]).filter(Boolean)).size;
 
   return (
     <div className="main-body">
@@ -92,9 +111,20 @@ export function StorageView({ data, loading, error, ioHistory, onSnapshotCreated
 
         <section>
           <div className="section-header">
+            <div className="section-title">Guests</div>
+            <div className="section-line" />
+            {data && <div className="section-title">{guestCount} guests · {guestDatasets.length} disks</div>}
+          </div>
+          {data && filter !== 'bulk' && (
+            <GuestTable guests={guests} datasets={filteredGuestDatasets} />
+          )}
+        </section>
+
+        <section>
+          <div className="section-header">
             <div className="section-title">Datasets &amp; Volumes</div>
             <div className="section-line" />
-            {data && <div className="section-title">{data.datasets.length} entries · {data.snapshots.length} snapshots</div>}
+            {data && <div className="section-title">{regularDatasets.length} entries · {data.snapshots.length} snapshots</div>}
           </div>
           {data && (
             <DatasetTable
