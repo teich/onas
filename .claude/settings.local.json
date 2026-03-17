@@ -8,7 +8,18 @@
       "Bash(curl:*)",
       "Bash(pkill:*)",
       "Bash(systemctl daemon-reload:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(find:*)",
+      "Read(//srv/photos/**)",
+      "Read(//srv/**)",
+      "Bash(getent group:*)",
+      "Read(//etc/**)",
+      "Bash(npm run:*)",
+      "Bash(systemctl restart:*)",
+      "Bash(git -C /opt/nas-dashboard status)",
+      "Bash(git -C /opt/nas-dashboard diff --stat)",
+      "Bash(git:*)",
+      "Bash(grep -r \"exec\\\\|spawn\\\\|shell\\\\|ssh\\\\|cmd\\\\|command\" /opt/nas-dashboard --include=\"*.js\" --include=\"*.ts\" ! -path \"*/node_modules/*\" -n)"
     ]
   }
 }

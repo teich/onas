@@ -217,7 +217,7 @@ app.get('/api/guests', async (req, res) => {
 // Dataset detail properties
 app.get('/api/dataset/*', async (req, res) => {
   const dataset = req.params[0];
-  if (!dataset || dataset.includes(';') || dataset.includes('`')) {
+  if (!dataset || !/^[a-zA-Z0-9_\-\.\:@\/]+$/.test(dataset)) {
     return res.status(400).json({ error: 'Invalid dataset name' });
   }
   try {
@@ -237,7 +237,9 @@ app.get('/api/dataset/*', async (req, res) => {
 app.post('/api/snapshot', express.json(), async (req, res) => {
   const { dataset, snapname } = req.body || {};
   if (!dataset || !snapname) return res.status(400).json({ error: 'dataset and snapname required' });
-  if (/[;`$\\|<>]/.test(dataset + snapname)) return res.status(400).json({ error: 'Invalid characters' });
+  if (!/^[a-zA-Z0-9_\-\.\:@\/]+$/.test(dataset) || !/^[a-zA-Z0-9_\-\.\:]+$/.test(snapname)) {
+    return res.status(400).json({ error: 'Invalid characters' });
+  }
   try {
     await sshExec(`zfs snapshot ${dataset}@${snapname}`);
     res.json({ ok: true, snapshot: `${dataset}@${snapname}` });
