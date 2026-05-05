@@ -761,7 +761,7 @@ body::before {
 
 .guest-grid {
   display: grid;
-  grid-template-columns: 40px 50px minmax(170px, 1fr) 90px 70px 76px 142px 90px 74px 186px;
+  grid-template-columns: 40px 50px minmax(130px, 0.85fr) minmax(170px, 1.1fr) 90px 70px 76px 132px 82px 70px 176px;
   align-items: center;
   column-gap: 8px;
   padding: 0 10px;
@@ -793,7 +793,7 @@ body::before {
 }
 .guest-head button:hover { color: var(--cyan); }
 .guest-head button:nth-child(2),
-.guest-head button:nth-child(n+5) {
+.guest-head button:nth-child(n+6) {
   text-align: right;
 }
 
@@ -829,6 +829,39 @@ body::before {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.service-links {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+.service-links a,
+.service-more {
+  min-width: 0;
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cyan);
+  background: var(--cyan-dim);
+  border: 1px solid rgba(34,211,238,0.22);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 10px;
+  line-height: 16px;
+  text-decoration: none;
+}
+.service-links a:hover {
+  border-color: rgba(34,211,238,0.55);
+  background: rgba(34,211,238,0.18);
+}
+.service-more {
+  color: var(--text2);
+  background: var(--bg2);
+  border-color: var(--border);
+  flex-shrink: 0;
 }
 
 .state-dot {
@@ -1226,7 +1259,7 @@ body::before {
 
 @media (max-width: 1180px) {
   .guest-grid {
-    grid-template-columns: 38px 46px minmax(130px, 1fr) 82px 64px 72px 124px 76px 70px 162px;
+    grid-template-columns: 38px 46px minmax(120px, 0.8fr) minmax(150px, 1fr) 82px 64px 72px 118px 72px 66px 158px;
   }
   .lower-grid { grid-template-columns: 1fr; }
   .lower-grid .dense-section:first-child { border-right: none; }

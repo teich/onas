@@ -31,7 +31,14 @@
     "104": {
       "label": "arr",
       "open": "ssh://lxc-104",
-      "dash": ""
+      "dash": "",
+      "links": [
+        { "label": "Jellyfin", "url": "" },
+        { "label": "Radarr", "url": "" },
+        { "label": "Sonarr", "url": "" },
+        { "label": "qBit", "url": "" },
+        { "label": "ABS", "url": "" }
+      ]
     },
     "105": {
       "label": "cockpit",

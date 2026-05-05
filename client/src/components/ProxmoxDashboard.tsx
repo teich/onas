@@ -46,6 +46,12 @@ function templateUrl(url: string | undefined, guest: Guest): string | undefined 
   return url.split('{vmid}').join(String(guest.vmid)).split('{name}').join(encodeURIComponent(guest.name));
 }
 
+function guestLinks(config: GuestConfigEntry, guest: Guest): Array<{ label: string; url: string }> {
+  return (config.links ?? [])
+    .map(link => ({ label: link.label, url: templateUrl(link.url, guest) ?? '' }))
+    .filter(link => link.label && link.url);
+}
+
 function guestConfig(state: DashboardState, guest: Guest): GuestConfigEntry {
   const byId = state.guestsConfig.guests?.[String(guest.vmid)] ?? {};
   const defaults = state.guestsConfig.defaults?.[guest.type] ?? {};
@@ -197,6 +203,7 @@ function GuestsPanel({ state, guestRates, busyGuest, onAction, onDelete }: {
         <button onClick={() => setSortKey('type')}>{sortLabel('type', 'Type')}</button>
         <button onClick={() => setSortKey('vmid')}>{sortLabel('vmid', 'ID')}</button>
         <button onClick={() => setSortKey('name')}>{sortLabel('name', 'Name')}</button>
+        <span>Services</span>
         <button onClick={() => setSortKey('status')}>{sortLabel('status', 'Status')}</button>
         <button onClick={() => setSortKey('uptime')}>{sortLabel('uptime', 'Uptime')}</button>
         <button onClick={() => setSortKey('cpu')}>{sortLabel('cpu', 'CPU')}</button>
@@ -207,7 +214,8 @@ function GuestsPanel({ state, guestRates, busyGuest, onAction, onDelete }: {
       </div>
       {rows.map(guest => {
         const cfg = guestConfig(state, guest);
-        const dash = templateUrl(cfg.dash, guest);
+        const links = guestLinks(cfg, guest);
+        const dash = templateUrl(cfg.dash, guest) || links[0]?.url;
         const ramPct = guest.maxmem ? (guest.mem ?? 0) / guest.maxmem * 100 : 0;
         const rate = guestRates[guest.vmid] ?? { inRate: 0, outRate: 0 };
         const disks = guestDiskDatasets(state.datasets, guest.vmid);
@@ -233,6 +241,12 @@ function GuestsPanel({ state, guestRates, busyGuest, onAction, onDelete }: {
             ) : (
               <span className="guest-name">{cfg.label || guest.name}</span>
             )}
+            <span className="service-links" onClick={event => event.stopPropagation()}>
+              {links.slice(0, 6).map(link => (
+                <a key={`${guest.vmid}-${link.label}`} href={link.url} target="_blank" rel="noreferrer" title={link.url}>{link.label}</a>
+              ))}
+              {links.length > 6 && <span className="service-more">+{links.length - 6}</span>}
+            </span>
             <span><i className={`state-dot ${guest.status}`} />{guest.status}</span>
             <span className="num">{fmtUptime(guest.uptime)}</span>
             <span className="metric-cell"><MiniBar value={(guest.cpu ?? 0) * 100} />{pct((guest.cpu ?? 0) * 100)}</span>

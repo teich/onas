@@ -105,6 +105,7 @@ export interface GuestConfigEntry {
   label?: string;
   open?: string;
   dash?: string;
+  links?: Array<{ label: string; url: string }>;
 }
 
 export interface GuestsConfig {
