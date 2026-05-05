@@ -142,6 +142,7 @@ export interface DashboardState {
   pools: Pool[];
   datasets: Dataset[];
   snapshots: Snapshot[];
+  shares: Share[];
   updates: UpdatesInfo;
   activity: ActivityEntry[];
   guestsConfig: GuestsConfig;

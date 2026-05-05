@@ -411,6 +411,7 @@ app.post('/api/snapshot', express.json(), async (req, res) => {
   }
   try {
     await sshExec(`zfs snapshot ${dataset}@${snapname}`);
+    zfsCache = null;
     res.json({ ok: true, snapshot: `${dataset}@${snapname}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -787,12 +788,16 @@ app.get('/api/state', async (req, res) => {
       getUpdates(),
       readGuestsConfig().catch(() => defaultGuestsConfig()),
     ]);
+    const shares = await fs.readFile(SMB_CONF, 'utf8')
+      .then(raw => parseSmbConf(raw).shares)
+      .catch(() => []);
     res.json({
       host,
       guests,
       pools: zfs.pools,
       datasets: zfs.datasets,
       snapshots: zfs.snapshots,
+      shares,
       updates,
       activity: activityLog,
       guestsConfig,

@@ -1,0 +1,127 @@
+{
+  "defaults": {
+    "lxc": {
+      "open": "ssh://lxc-{vmid}"
+    },
+    "vm": {
+      "open": "https://proxmox.tail-scale.ts.net:8006/?console=kvm&vmid={vmid}&novnc=1"
+    }
+  },
+  "guests": {
+    "100": {
+      "label": "haos",
+      "open": "https://proxmox.tail-scale.ts.net:8006/?console=kvm&vmid=100&novnc=1",
+      "dash": ""
+    },
+    "101": {
+      "label": "openclaw",
+      "open": "ssh://lxc-101",
+      "dash": ""
+    },
+    "102": {
+      "label": "homepage",
+      "open": "ssh://lxc-102",
+      "dash": ""
+    },
+    "103": {
+      "label": "immich",
+      "open": "ssh://lxc-103",
+      "dash": ""
+    },
+    "104": {
+      "label": "arr",
+      "open": "ssh://lxc-104",
+      "dash": ""
+    },
+    "105": {
+      "label": "cockpit",
+      "open": "ssh://lxc-105",
+      "dash": ""
+    },
+    "106": {
+      "label": "cloudflared-teich",
+      "open": "ssh://lxc-106",
+      "dash": ""
+    },
+    "107": {
+      "label": "rustdeskserver",
+      "open": "ssh://lxc-107",
+      "dash": ""
+    },
+    "108": {
+      "label": "quickbooks",
+      "open": "https://proxmox.tail-scale.ts.net:8006/?console=kvm&vmid=108&novnc=1",
+      "dash": ""
+    },
+    "109": {
+      "label": "cloudflared-aac",
+      "open": "ssh://lxc-109",
+      "dash": ""
+    },
+    "110": {
+      "label": "evcc",
+      "open": "ssh://lxc-110",
+      "dash": ""
+    },
+    "111": {
+      "label": "uptimekuma",
+      "open": "ssh://lxc-111",
+      "dash": ""
+    },
+    "112": {
+      "label": "proxmox-backup-server",
+      "open": "ssh://lxc-112",
+      "dash": ""
+    },
+    "113": {
+      "label": "aac-external-apps",
+      "open": "ssh://lxc-113",
+      "dash": ""
+    },
+    "114": {
+      "label": "caddy",
+      "open": "ssh://lxc-114",
+      "dash": ""
+    },
+    "115": {
+      "label": "adguard",
+      "open": "ssh://lxc-115",
+      "dash": ""
+    },
+    "116": {
+      "label": "personal-windows",
+      "open": "https://proxmox.tail-scale.ts.net:8006/?console=kvm&vmid=116&novnc=1",
+      "dash": ""
+    },
+    "117": {
+      "label": "Franklin-automation",
+      "open": "ssh://lxc-117",
+      "dash": ""
+    },
+    "118": {
+      "label": "phone-gate-bridge",
+      "open": "ssh://lxc-118",
+      "dash": ""
+    },
+    "119": {
+      "label": "onas",
+      "open": "ssh://lxc-119",
+      "dash": ""
+    },
+    "120": {
+      "label": "ollama",
+      "open": "ssh://lxc-120",
+      "dash": ""
+    },
+    "121": {
+      "label": "n8n",
+      "open": "ssh://lxc-121",
+      "dash": ""
+    },
+    "301": {
+      "label": "acc-external-apps",
+      "open": "https://proxmox.tail-scale.ts.net:8006/?console=kvm&vmid=301&novnc=1",
+      "dash": ""
+    }
+  }
+}

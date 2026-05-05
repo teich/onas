@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { deleteGuest, fetchState, guestActionByRoute } from '../lib/api';
-import type { ActivityEntry, DashboardState, Dataset, Guest, GuestConfigEntry, Snapshot } from '../lib/types';
-import { fmtBytes, parseSize, timeAgo } from '../lib/helpers';
+import { createSnapshot, deleteUser, deleteGuest, fetchState, fetchUsers, guestActionByRoute, putSmb, createUser } from '../lib/api';
+import type { ActivityEntry, DashboardState, Dataset, Guest, GuestConfigEntry, Share, SmbUser, Snapshot } from '../lib/types';
+import { defaultSnapName, fmtBytes, parseSize, timeAgo } from '../lib/helpers';
 
 interface RatePoint {
   at: number;
@@ -24,6 +24,7 @@ const EMPTY_STATE: DashboardState = {
   pools: [],
   datasets: [],
   snapshots: [],
+  shares: [],
   updates: { count: 0, packages: [], raw: '', checkedAt: null },
   activity: [],
   guestsConfig: {},
@@ -54,6 +55,12 @@ function guestConfig(state: DashboardState, guest: Guest): GuestConfigEntry {
 function guestDiskDatasets(datasets: Dataset[], vmid: number): Dataset[] {
   const re = new RegExp(`/(?:vm|subvol)-${vmid}-disk-\\d+$`);
   return datasets.filter(ds => re.test(ds.name));
+}
+
+function datasetShares(dataset: Dataset, shares: Share[]): Share[] {
+  const mount = dataset.mountpoint;
+  if (!mount || mount === '-' || mount === 'none') return [];
+  return shares.filter(share => share.path === mount || share.path.startsWith(`${mount}/`));
 }
 
 function diskTotal(datasets: Dataset[], guest: Guest): number {
@@ -209,7 +216,19 @@ function GuestsPanel({ state, guestRates, busyGuest, onAction, onDelete }: {
           >
             <span className={`type-badge ${guest.type}`}>{guest.type.toUpperCase()}</span>
             <span className="num">{guest.vmid}</span>
-            <span className="guest-name">{cfg.label || guest.name}</span>
+            {dash ? (
+              <a
+                className="guest-name guest-name-link"
+                href={dash}
+                target="_blank"
+                rel="noreferrer"
+                onClick={event => event.stopPropagation()}
+              >
+                {cfg.label || guest.name}
+              </a>
+            ) : (
+              <span className="guest-name">{cfg.label || guest.name}</span>
+            )}
             <span><i className={`state-dot ${guest.status}`} />{guest.status}</span>
             <span className="num">{fmtUptime(guest.uptime)}</span>
             <span className="metric-cell"><MiniBar value={(guest.cpu ?? 0) * 100} />{pct((guest.cpu ?? 0) * 100)}</span>
@@ -256,7 +275,7 @@ function SnapshotsPanel({ snapshots }: { snapshots: Snapshot[] }) {
   return (
     <section className="dense-section snapshots-panel">
       <div className="dense-title"><span>ZFS Snapshots</span><span>{snapshots.length} snaps</span></div>
-      <div className="snapshot-head"><span>Dataset</span><span>Count</span><span>Used</span><span>Newest</span><span>Action</span></div>
+      <div className="snapshot-head"><span>Dataset</span><span>Snapshots</span><span>Used</span><span>Newest</span><span>Action</span></div>
       {rows.slice(0, 14).map(row => (
         <div className="snapshot-row" key={row.dataset}>
           <span title={row.dataset}>{row.dataset}</span>
@@ -267,6 +286,251 @@ function SnapshotsPanel({ snapshots }: { snapshots: Snapshot[] }) {
         </div>
       ))}
     </section>
+  );
+}
+
+function DatasetsPanel({ state, onOpen }: { state: DashboardState; onOpen: (dataset: Dataset) => void }) {
+  const rows = state.datasets
+    .filter(ds => ds.type === 'filesystem' && ds.mountpoint && ds.mountpoint !== '-' && ds.mountpoint !== 'none')
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  return (
+    <section className="dense-section datasets-panel">
+      <div className="dense-title"><span>Datasets</span><span>{rows.length} mounted</span></div>
+      <div className="dataset-head"><span>Dataset</span><span>Used</span><span>Avail</span><span>Refer</span><span>Mount</span><span>Snaps</span><span>Shares</span><span>Actions</span></div>
+      {rows.slice(0, 28).map(ds => {
+        const snaps = state.snapshots.filter(snapshot => snapshot.dataset === ds.name);
+        const shares = datasetShares(ds, state.shares);
+        const rootShares = shares.filter(share => share.path === ds.mountpoint).length;
+        const shareLabel = shares.length === 0 ? '0' : rootShares > 0 && shares.length > rootShares ? `${rootShares} root + ${shares.length - rootShares} sub` : String(shares.length);
+        return (
+          <div className="dataset-row" key={ds.name}>
+            <button className="dataset-link" onClick={() => onOpen(ds)} title={ds.name}>{ds.name}</button>
+            <span className="num">{ds.used}</span>
+            <span className="num">{ds.avail}</span>
+            <span className="num">{ds.refer}</span>
+            <span title={ds.mountpoint}>{ds.mountpoint}</span>
+            <button onClick={() => onOpen(ds)}>{snaps.length}</button>
+            <button onClick={() => onOpen(ds)}>{shareLabel}</button>
+            <button onClick={() => onOpen(ds)}>Details</button>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function UsersModal({ onClose }: { onClose: () => void }) {
+  const [users, setUsers] = useState<SmbUser[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => {
+    fetchUsers().then(data => setUsers(data.users ?? [])).catch(e => setError((e as Error).message));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const addUser = async () => {
+    if (!username || !password) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await createUser(username, password);
+      setUsername('');
+      setPassword('');
+      load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const removeUser = async (name: string) => {
+    if (!window.confirm(`Delete SMB user ${name}?`)) return;
+    setBusy(true);
+    try {
+      await deleteUser(name);
+      load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="dense-modal users-modal" onClick={event => event.stopPropagation()}>
+        <div className="modal-title"><span>SMB Users</span><button onClick={onClose}>Close</button></div>
+        {error && <div className="modal-error">{error}</div>}
+        <div className="users-list">
+          {users.map(user => (
+            <div className="user-line" key={user.username}>
+              <span>{user.username}</span><span>{user.fullName || '-'}</span><button disabled={busy} onClick={() => removeUser(user.username)}>Delete</button>
+            </div>
+          ))}
+        </div>
+        <div className="share-form compact">
+          <input value={username} onChange={e => setUsername(e.target.value)} placeholder="username" />
+          <input value={password} onChange={e => setPassword(e.target.value)} placeholder="password" type="password" />
+          <button disabled={busy || !username || !password} onClick={addUser}>Add User</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DatasetModal({ dataset, state, onClose, onStatePatch }: {
+  dataset: Dataset;
+  state: DashboardState;
+  onClose: () => void;
+  onStatePatch: (patch: Partial<DashboardState>) => void;
+}) {
+  const [shares, setShares] = useState<Share[]>(datasetShares(dataset, state.shares));
+  const [editing, setEditing] = useState<Share | null>(null);
+  const [snapName, setSnapName] = useState(defaultSnapName());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showUsers, setShowUsers] = useState(false);
+  const snaps = state.snapshots
+    .filter(snapshot => snapshot.dataset === dataset.name)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  useEffect(() => {
+    setShares(datasetShares(dataset, state.shares));
+    setEditing(null);
+    setError(null);
+  }, [dataset.name, state.shares]);
+
+  const emptyShare = (): Share => ({
+    name: dataset.name.split('/').pop() || dataset.name.replace(/[^a-z0-9_-]/gi, '-'),
+    path: dataset.mountpoint,
+    comment: '',
+    readOnly: false,
+    guestOk: false,
+    browseable: true,
+    inheritPermissions: true,
+  });
+
+  const saveShare = async (share: Share) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const exists = state.shares.some(item => item.name === share.name);
+      const nextShares = exists ? state.shares.map(item => item.name === share.name ? share : item) : [...state.shares, share];
+      const data = await putSmb(nextShares);
+      onStatePatch({ shares: data.shares ?? nextShares });
+      setEditing(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeShare = async (share: Share) => {
+    if (!window.confirm(`Delete SMB share ${share.name}?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const nextShares = state.shares.filter(item => item.name !== share.name);
+      const data = await putSmb(nextShares);
+      onStatePatch({ shares: data.shares ?? nextShares });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const takeSnapshot = async () => {
+    if (!snapName.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await createSnapshot(dataset.name, snapName.trim());
+      setSnapName(defaultSnapName());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="dense-modal dataset-modal" onClick={event => event.stopPropagation()}>
+        <div className="modal-title">
+          <span>{dataset.name}</span>
+          <div><button onClick={() => setShowUsers(true)}>Users</button><button onClick={onClose}>Close</button></div>
+        </div>
+        {error && <div className="modal-error">{error}</div>}
+        <div className="dataset-modal-grid">
+          <section>
+            <div className="modal-section-title">Dataset</div>
+            <div className="modal-props">
+              <span>Mount</span><strong>{dataset.mountpoint}</strong>
+              <span>Used</span><strong>{dataset.used}</strong>
+              <span>Avail</span><strong>{dataset.avail}</strong>
+              <span>Refer</span><strong>{dataset.refer}</strong>
+              <span>Type</span><strong>{dataset.type}</strong>
+            </div>
+          </section>
+          <section>
+            <div className="modal-section-title">Snapshots</div>
+            <div className="snap-create-row"><input value={snapName} onChange={e => setSnapName(e.target.value)} /><button disabled={busy || !snapName.trim()} onClick={takeSnapshot}>+ Snap</button></div>
+            <div className="modal-list">
+              {snaps.slice(0, 16).map(snapshot => (
+                <div className="modal-list-row" key={snapshot.name}>
+                  <span title={snapshot.snapname}>@{snapshot.snapname}</span><span>{fmtBytes(snapshot.usedBytes)}</span><span>{timeAgo(snapshot.createdAt)}</span>
+                </div>
+              ))}
+              {snaps.length === 0 && <div className="empty-log">No snapshots</div>}
+            </div>
+          </section>
+          <section className="shares-section">
+            <div className="modal-section-title">SMB Shares</div>
+            <div className="modal-list">
+              {shares.map(share => (
+                <div className="share-line" key={share.name}>
+                  <span>{share.name}</span><span title={share.path}>{share.path}</span><span>{share.readOnly ? 'RO' : 'RW'}</span>
+                  <button onClick={() => setEditing(share)}>Edit</button><button disabled={busy} onClick={() => removeShare(share)}>Delete</button>
+                </div>
+              ))}
+              {shares.length === 0 && <div className="empty-log">No shares under this dataset</div>}
+            </div>
+            <button className="modal-primary" onClick={() => setEditing(emptyShare())}>+ Share Dataset</button>
+          </section>
+          {editing && (
+            <section className="share-form-section">
+              <div className="modal-section-title">{state.shares.some(item => item.name === editing.name) ? 'Edit Share' : 'New Share'}</div>
+              <ShareForm share={editing} busy={busy} onCancel={() => setEditing(null)} onSave={saveShare} />
+            </section>
+          )}
+        </div>
+      </div>
+      {showUsers && <UsersModal onClose={() => setShowUsers(false)} />}
+    </div>
+  );
+}
+
+function ShareForm({ share, busy, onCancel, onSave }: {
+  share: Share;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (share: Share) => void;
+}) {
+  const [form, setForm] = useState(share);
+  useEffect(() => setForm(share), [share.name, share.path]);
+  return (
+    <div className="share-form">
+      <input value={form.name} onChange={e => setForm(current => ({ ...current, name: e.target.value }))} placeholder="share name" />
+      <input value={form.path} onChange={e => setForm(current => ({ ...current, path: e.target.value }))} placeholder="/mount/path" />
+      <input value={form.comment} onChange={e => setForm(current => ({ ...current, comment: e.target.value }))} placeholder="comment" />
+      <label><input type="checkbox" checked={form.readOnly} onChange={e => setForm(current => ({ ...current, readOnly: e.target.checked }))} /> read only</label>
+      <label><input type="checkbox" checked={form.guestOk} onChange={e => setForm(current => ({ ...current, guestOk: e.target.checked }))} /> guest ok</label>
+      <label><input type="checkbox" checked={form.browseable} onChange={e => setForm(current => ({ ...current, browseable: e.target.checked }))} /> browse</label>
+      <label><input type="checkbox" checked={form.inheritPermissions} onChange={e => setForm(current => ({ ...current, inheritPermissions: e.target.checked }))} /> inherit perms</label>
+      <div className="form-actions"><button disabled={busy || !form.name || !form.path} onClick={() => onSave(form)}>Save</button><button onClick={onCancel}>Cancel</button></div>
+    </div>
   );
 }
 
@@ -297,6 +561,7 @@ export function ProxmoxDashboard() {
   const [busyGuest, setBusyGuest] = useState<number | null>(null);
   const [history, setHistory] = useState<RatePoint[]>([]);
   const [guestRates, setGuestRates] = useState<Record<number, { inRate: number; outRate: number }>>({});
+  const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
   const lastGuestRatesRef = useRef<Record<number, GuestRate>>({});
   const guestRatesRef = useRef<Record<number, { inRate: number; outRate: number }>>({});
 
@@ -306,7 +571,7 @@ export function ProxmoxDashboard() {
       setState(previous => {
         const preserveStorage = previous.pools.length > 0 && next.pools.length === 0 && next.datasets.length === 0 && next.snapshots.length === 0;
         return preserveStorage
-          ? { ...next, pools: previous.pools, datasets: previous.datasets, snapshots: previous.snapshots }
+          ? { ...next, pools: previous.pools, datasets: previous.datasets, snapshots: previous.snapshots, shares: next.shares.length > 0 ? next.shares : previous.shares }
           : next;
       });
       setError(null);
@@ -391,9 +656,18 @@ export function ProxmoxDashboard() {
             <StoragePanel state={state} />
             <SnapshotsPanel snapshots={state.snapshots} />
           </div>
+          <DatasetsPanel state={state} onOpen={setSelectedDataset} />
         </div>
         <ChartsRail history={history} activity={state.activity} />
       </main>
+      {selectedDataset && (
+        <DatasetModal
+          dataset={selectedDataset}
+          state={state}
+          onClose={() => setSelectedDataset(null)}
+          onStatePatch={patch => setState(current => ({ ...current, ...patch }))}
+        />
+      )}
     </div>
   );
 }

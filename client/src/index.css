@@ -802,6 +802,14 @@ body::before {
 .guest-row:hover { background: rgba(255,255,255,0.025); }
 .guest-row.clickable .guest-name { color: var(--text0); cursor: pointer; }
 .guest-row.clickable:hover .guest-name { color: var(--cyan); }
+.guest-name-link {
+  text-decoration: none;
+}
+.guest-name-link:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
 
 .type-badge {
   width: 30px;
@@ -909,6 +917,233 @@ body::before {
   grid-template-columns: minmax(160px, 1fr) 54px 70px 70px 76px;
   gap: 8px;
   color: var(--text1);
+}
+
+.datasets-panel { border-top: 1px solid var(--border-hi); }
+.dataset-head,
+.dataset-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) 62px 62px 62px minmax(180px, 1fr) 54px 76px 76px;
+  gap: 8px;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+.dataset-head {
+  color: var(--text2);
+  background: var(--bg2);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.dataset-row { color: var(--text1); }
+.dataset-row:hover { background: rgba(255,255,255,0.025); }
+.dataset-row > span,
+.dataset-link {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dataset-link,
+.dataset-row button {
+  font: inherit;
+  color: var(--text1);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.dataset-link { color: var(--text0); }
+.dataset-row button:not(.dataset-link) {
+  color: var(--cyan);
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  border-radius: 3px;
+  padding: 2px 5px;
+  text-align: center;
+}
+.dataset-link:hover,
+.dataset-row button:hover { color: var(--cyan); border-color: rgba(34,211,238,0.45); }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(0,0,0,0.62);
+}
+.dense-modal {
+  width: min(1180px, calc(100vw - 56px));
+  max-height: calc(100vh - 56px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg1);
+  border: 1px solid var(--border-hi);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.45);
+}
+.users-modal { width: min(680px, calc(100vw - 56px)); }
+.modal-title {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-hi);
+  color: var(--text0);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.modal-title > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modal-title button,
+.modal-primary,
+.snap-create-row button,
+.share-line button,
+.user-line button,
+.share-form button {
+  font: inherit;
+  font-size: 10px;
+  color: var(--text1);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.modal-title button:hover,
+.modal-primary:hover,
+.snap-create-row button:hover:not(:disabled),
+.share-line button:hover:not(:disabled),
+.user-line button:hover:not(:disabled),
+.share-form button:hover:not(:disabled) {
+  color: var(--cyan);
+  border-color: rgba(34,211,238,0.45);
+}
+.modal-title div { display: flex; gap: 6px; }
+.modal-error {
+  padding: 6px 10px;
+  color: var(--red);
+  background: var(--red-dim);
+  border-bottom: 1px solid rgba(239,68,68,0.35);
+}
+.dataset-modal-grid {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(360px, 1fr) minmax(420px, 1.2fr);
+  gap: 0;
+}
+.dataset-modal-grid section {
+  min-width: 0;
+  padding: 10px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.dataset-modal-grid section:nth-child(3n) { border-right: 0; }
+.share-form-section { grid-column: 1 / -1; }
+.modal-section-title {
+  margin-bottom: 8px;
+  color: var(--text2);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.modal-props {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 1px 10px;
+}
+.modal-props span,
+.modal-props strong {
+  min-width: 0;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modal-props span { color: var(--text2); }
+.modal-props strong { color: var(--text1); font-weight: 400; }
+.snap-create-row,
+.share-form.compact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.share-form.compact { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 76px; padding: 10px; border-top: 1px solid var(--border); }
+.snap-create-row input,
+.share-form input {
+  min-width: 0;
+  font: inherit;
+  color: var(--text0);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 4px 6px;
+}
+.modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.modal-list-row,
+.share-line,
+.user-line {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text1);
+}
+.modal-list-row { grid-template-columns: minmax(0, 1fr) 70px 62px; }
+.share-line { grid-template-columns: 100px minmax(0, 1fr) 34px 48px 56px; }
+.user-line { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 62px; padding: 0 10px; }
+.modal-list-row span,
+.share-line span,
+.user-line span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modal-primary { margin-top: 10px; color: var(--cyan); }
+.share-form {
+  display: grid;
+  grid-template-columns: 160px minmax(220px, 1fr) minmax(180px, 1fr) repeat(4, max-content) 120px;
+  gap: 8px;
+  align-items: center;
+}
+.share-form label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text1);
+  white-space: nowrap;
+}
+.form-actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+@media (max-width: 1320px) {
+  .dataset-modal-grid { grid-template-columns: 1fr; }
+  .dataset-modal-grid section { border-right: 0; }
+  .share-form { grid-template-columns: 1fr; }
 }
 
 .charts-rail {
