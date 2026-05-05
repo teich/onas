@@ -110,10 +110,14 @@ function HostBar({ state, stale }: {
   const patches = state.updates.patches ?? 0;
   const updates = state.updates.updates ?? state.updates.count;
   const upgrades = state.updates.upgrades ?? 0;
+  const vmOpen = state.guestsConfig.defaults?.vm?.open;
+  const proxmoxUrl = vmOpen?.startsWith('http') ? vmOpen.split('?')[0] : 'https://wtr.giraffe-gamma.ts.net';
   return (
     <div className="host-strip">
       <div className="host-strip-main">
-        <span className={`status-pill ${host ? 'running' : 'error'}`}>{host ? 'online' : 'disconnected'}</span>
+        <a className={`status-pill ${host ? 'running' : 'error'}`} href={proxmoxUrl} target="_blank" rel="noreferrer">
+          {host ? 'online' : 'disconnected'}
+        </a>
         <strong>{host?.hostname || 'proxmox'}</strong>
         <span><span className="muted">CPU</span> {pct(host?.cpu.pct)} <MiniBar value={host?.cpu.pct ?? 0} /></span>
         <span className={ramPct > 85 ? 'danger' : ''}><span className="muted">MEM</span> {host ? `${fmtBytes(host.mem.usedBytes)} / ${fmtBytes(host.mem.totalBytes)}` : '0 B / 0 B'} <MiniBar value={ramPct} /></span>

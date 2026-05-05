@@ -188,7 +188,7 @@ function defaultGuestsConfig() {
   return {
     defaults: {
       lxc: { open: 'ssh://lxc-{vmid}' },
-      vm: { open: 'https://proxmox.tail-scale.ts.net:8006/?console=kvm&vmid={vmid}&novnc=1' },
+      vm: { open: 'https://wtr.giraffe-gamma.ts.net/?console=kvm&vmid={vmid}&novnc=1' },
     },
     guests: {},
   };

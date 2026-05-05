@@ -4,13 +4,13 @@
       "open": "ssh://lxc-{vmid}"
     },
     "vm": {
-      "open": "https://proxmox.tail-scale.ts.net:8006/?console=kvm&vmid={vmid}&novnc=1"
+      "open": "https://wtr.giraffe-gamma.ts.net/?console=kvm&vmid={vmid}&novnc=1"
     }
   },
   "guests": {
     "100": {
       "label": "haos",
-      "open": "https://proxmox.tail-scale.ts.net:8006/?console=kvm&vmid=100&novnc=1",
+      "open": "https://wtr.giraffe-gamma.ts.net/?console=kvm&vmid=100&novnc=1",
       "dash": ""
     },
     "101": {
@@ -50,7 +50,7 @@
     },
     "108": {
       "label": "quickbooks",
-      "open": "https://proxmox.tail-scale.ts.net:8006/?console=kvm&vmid=108&novnc=1",
+      "open": "https://wtr.giraffe-gamma.ts.net/?console=kvm&vmid=108&novnc=1",
       "dash": ""
     },
     "109": {
@@ -90,7 +90,7 @@
     },
     "116": {
       "label": "personal-windows",
-      "open": "https://proxmox.tail-scale.ts.net:8006/?console=kvm&vmid=116&novnc=1",
+      "open": "https://wtr.giraffe-gamma.ts.net/?console=kvm&vmid=116&novnc=1",
       "dash": ""
     },
     "117": {
@@ -120,7 +120,7 @@
     },
     "301": {
       "label": "acc-external-apps",
-      "open": "https://proxmox.tail-scale.ts.net:8006/?console=kvm&vmid=301&novnc=1",
+      "open": "https://wtr.giraffe-gamma.ts.net/?console=kvm&vmid=301&novnc=1",
       "dash": ""
     }
   }

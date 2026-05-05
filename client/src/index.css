@@ -655,15 +655,19 @@ body::before {
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 
 .status-pill {
+  display: inline-flex;
+  align-items: center;
   padding: 1px 6px;
   border: 1px solid var(--border);
   border-radius: 3px;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  text-decoration: none;
 }
 .status-pill.running { color: var(--green); background: var(--green-dim); border-color: rgba(16,185,129,0.3); }
 .status-pill.error { color: var(--red); background: var(--red-dim); border-color: rgba(239,68,68,0.4); }
+.status-pill:hover { border-color: rgba(34,211,238,0.45); color: var(--cyan); }
 
 .updates-button,
 .guest-actions button,
