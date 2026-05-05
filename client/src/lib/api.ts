@@ -1,7 +1,13 @@
-import type { Share, HostHealth, SmartDisk } from './types';
+import type { Share, HostHealth, SmartDisk, DashboardState, GuestsConfig } from './types';
 
 export async function fetchZfs() {
   const res = await fetch('/api/zfs');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function fetchState(): Promise<DashboardState> {
+  const res = await fetch('/api/state');
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -30,6 +36,12 @@ export async function createSnapshot(dataset: string, snapname: string) {
 
 export async function fetchGuests() {
   const res = await fetch('/api/guests');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function fetchGuestsConfig(): Promise<GuestsConfig> {
+  const res = await fetch('/api/config/guests');
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -96,11 +108,30 @@ export async function guestAction(vmid: number, type: 'lxc' | 'vm', action: stri
   return res.json();
 }
 
+export async function guestActionByRoute(vmid: number, action: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/guests/${vmid}/${action}`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteGuest(vmid: number, confirm: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`/api/guests/${vmid}?confirm=${encodeURIComponent(confirm)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function fetchHost(): Promise<HostHealth> {
   const res = await fetch('/api/host');
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
+
 
 export async function fetchSmart(): Promise<{ disks: SmartDisk[]; timestamp: string }> {
   const res = await fetch('/api/smart');

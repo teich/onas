@@ -4,15 +4,43 @@ const fs = require('fs').promises;
 const path = require('path');
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
+const HOST_SSH = process.env.PVE_DASH_SSH || 'root@192.168.2.2';
+const CONFIG_DIR = process.env.PVE_DASH_CONFIG_DIR || '/etc/pve-dash';
+const activityLog = [];
+let updatesCache = null;
+let zfsCache = null;
+
+app.use(express.json({ limit: '1mb' }));
 
 function sshExec(command) {
   return new Promise((resolve, reject) => {
-    execFile('ssh', ['-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes', 'root@192.168.2.2', command], (err, stdout, stderr) => {
+    execFile('ssh', ['-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes', HOST_SSH, command], (err, stdout, stderr) => {
       if (err && !stdout) return reject(new Error(stderr || err.message));
       resolve(stdout);
     });
   });
+}
+
+function sshExecCapture(command) {
+  return new Promise((resolve) => {
+    execFile('ssh', ['-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes', HOST_SSH, command], (err, stdout, stderr) => {
+      resolve({ exitCode: err && Number.isInteger(err.code) ? err.code : 0, stdout: stdout || '', stderr: stderr || '' });
+    });
+  });
+}
+
+function pushActivity(action, target, result) {
+  activityLog.unshift({
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    timestamp: new Date().toISOString(),
+    action,
+    target,
+    exitCode: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  });
+  activityLog.splice(20);
 }
 
 // Parse zpool list -H output
@@ -156,41 +184,60 @@ function parseSnapshots(raw) {
   });
 }
 
-app.get('/api/zfs', async (req, res) => {
+function defaultGuestsConfig() {
+  return {
+    defaults: {
+      lxc: { open: 'ssh://lxc-{vmid}' },
+      vm: { open: 'https://proxmox.tail-scale.ts.net:8006/?console=kvm&vmid={vmid}&novnc=1' },
+    },
+    guests: {},
+  };
+}
+
+async function readGuestsConfig() {
+  const configPath = path.join(CONFIG_DIR, 'guests.json');
   try {
-    const [zpoolRaw, zfsRaw, statusRaw, snapRaw] = await Promise.all([
-      sshExec('zpool list -H -o name,size,alloc,free,frag,cap,dedup,health'),
-      sshExec('zfs list -H -o name,used,avail,refer,mountpoint,type,volsize'),
-      sshExec('zpool status'),
-      sshExec('zfs list -t snapshot -H -p -o name,used,refer,creation'),
-    ]);
-
-    const pools = parseZpoolList(zpoolRaw);
-    const datasets = parseZfsList(zfsRaw);
-    const statusData = parseZpoolStatus(statusRaw);
-    const snapshots = parseSnapshots(snapRaw);
-
-    // Merge status data into pools
-    for (const pool of pools) {
-      const status = statusData.find(s => s.name === pool.name);
-      if (status) {
-        pool.scan = status.scan;
-        pool.errors = status.errors;
-        pool.vdevs = status.vdevs;
-        pool.configRaw = status.configRaw;
-      }
-    }
-
-    res.json({ pools, datasets, snapshots, timestamp: new Date().toISOString() });
+    const raw = await fs.readFile(configPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return {
+      ...defaultGuestsConfig(),
+      ...parsed,
+      defaults: { ...defaultGuestsConfig().defaults, ...(parsed.defaults || {}) },
+      guests: parsed.guests || {},
+    };
   } catch (err) {
-    console.error('SSH error:', err.message);
-    res.status(500).json({ error: err.message });
+    if (err.code === 'ENOENT') return defaultGuestsConfig();
+    throw err;
   }
-});
+}
 
-// Proxmox guest list (LXC + VMs)
-app.get('/api/guests', async (req, res) => {
+function parsePveResources(raw) {
+  const rows = JSON.parse(raw || '[]');
+  return rows
+    .filter(item => item.type === 'lxc' || item.type === 'qemu')
+    .map(item => ({
+      vmid: Number(item.vmid),
+      name: item.name || `guest-${item.vmid}`,
+      status: item.status || 'unknown',
+      type: item.type === 'lxc' ? 'lxc' : 'vm',
+      uptime: item.uptime || 0,
+      cpu: item.cpu || 0,
+      mem: item.mem || 0,
+      maxmem: item.maxmem || 0,
+      disk: item.disk || 0,
+      maxdisk: item.maxdisk || 0,
+      netin: item.netin || 0,
+      netout: item.netout || 0,
+      diskread: item.diskread || 0,
+      diskwrite: item.diskwrite || 0,
+      lock: item.lock || '',
+    }));
+}
+
+async function getGuests() {
   try {
+    return parsePveResources(await sshExec('pvesh get /cluster/resources --type vm --output-format json'));
+  } catch (_) {
     const [pctRaw, qmRaw] = await Promise.all([
       sshExec('pct list'),
       sshExec('qm list'),
@@ -199,16 +246,138 @@ app.get('/api/guests', async (req, res) => {
     for (const line of pctRaw.trim().split('\n').slice(1).filter(Boolean)) {
       const parts = line.trim().split(/\s+/);
       if (parts.length < 3) continue;
-      // columns: VMID Status [Lock] Name — name is always last
       guests.push({ vmid: parseInt(parts[0]), status: parts[1], name: parts[parts.length - 1], type: 'lxc' });
     }
     for (const line of qmRaw.trim().split('\n').slice(1).filter(Boolean)) {
       const parts = line.trim().split(/\s+/);
       if (parts.length < 3) continue;
-      // columns: VMID NAME STATUS MEM BOOTDISK PID
       guests.push({ vmid: parseInt(parts[0]), name: parts[1], status: parts[2], type: 'vm' });
     }
-    res.json({ guests });
+    return guests;
+  }
+}
+
+function parseUpdates(raw) {
+  const packages = raw.trim().split('\n').filter(line => line && !line.startsWith('Listing...'));
+  const buckets = packages.reduce((acc, line) => {
+    const kind = classifyAptChange(line);
+    acc[kind]++;
+    return acc;
+  }, { patches: 0, updates: 0, upgrades: 0 });
+  return { count: packages.length, ...buckets, packages, raw, checkedAt: new Date().toISOString(), stale: false };
+}
+
+function numericVersionParts(version) {
+  const cleaned = String(version || '').replace(/^\d+:/, '');
+  const match = cleaned.match(/(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+  return match ? [Number(match[1]), Number(match[2] || 0), Number(match[3] || 0)] : null;
+}
+
+function classifyAptChange(line) {
+  const match = line.match(/^\S+\s+(\S+)\s+\S+\s+\[upgradable from:\s*([^\]]+)\]/);
+  if (!match) return 'updates';
+  const next = numericVersionParts(match[1]);
+  const current = numericVersionParts(match[2]);
+  if (!next || !current) return 'updates';
+  if (next[0] !== current[0]) return 'upgrades';
+  if (next[1] !== current[1]) return 'updates';
+  return 'patches';
+}
+
+async function getUpdates() {
+  if (updatesCache) return updatesCache;
+  try {
+    updatesCache = parseUpdates(await sshExec('apt list --upgradable 2>/dev/null'));
+  } catch (err) {
+    updatesCache = { count: 0, patches: 0, updates: 0, upgrades: 0, packages: [], raw: err.message, checkedAt: new Date().toISOString(), stale: true };
+  }
+  return updatesCache;
+}
+
+async function getHostHealth() {
+  const [memRaw, loadRaw, uptimeRaw, nProcRaw, cpuRaw, hostRaw, kernelRaw] = await Promise.all([
+    sshExec('cat /proc/meminfo'),
+    sshExec('cat /proc/loadavg'),
+    sshExec('cat /proc/uptime'),
+    sshExec('nproc'),
+    sshExec(
+      "awk '/^cpu /{u=$2+$4;t=$2+$3+$4+$5+$6+$7+$8;printf \"%d %d\\n\",u,t}' /proc/stat;" +
+      "sleep 0.5;" +
+      "awk '/^cpu /{u=$2+$4;t=$2+$3+$4+$5+$6+$7+$8;printf \"%d %d\\n\",u,t}' /proc/stat"
+    ),
+    sshExec('hostname'),
+    sshExec('uname -r'),
+  ]);
+
+  const memMap = {};
+  for (const line of memRaw.trim().split('\n')) {
+    const m = line.match(/^(\w+):\s+(\d+)/);
+    if (m) memMap[m[1]] = parseInt(m[2]) * 1024;
+  }
+  const memTotal = memMap.MemTotal || 0;
+  const memAvail = memMap.MemAvailable || 0;
+  const swapTotal = memMap.SwapTotal || 0;
+  const swapFree = memMap.SwapFree || 0;
+  const [load1, load5, load15] = loadRaw.trim().split(' ').map(parseFloat);
+  const uptimeSeconds = Math.floor(parseFloat(uptimeRaw.trim().split(' ')[0]));
+  const cpuLines = cpuRaw.trim().split('\n');
+  const [u1, t1] = cpuLines[0].split(' ').map(Number);
+  const [u2, t2] = cpuLines[1] ? cpuLines[1].split(' ').map(Number) : [u1, t1 + 1];
+  const cpuPct = t2 - t1 > 0 ? ((u2 - u1) / (t2 - t1)) * 100 : 0;
+
+  return {
+    hostname: hostRaw.trim(),
+    kernel: kernelRaw.trim(),
+    cpu: { pct: Math.round(cpuPct * 10) / 10, cores: parseInt(nProcRaw.trim()) || 1 },
+    mem: { totalBytes: memTotal, usedBytes: memTotal - memAvail, availBytes: memAvail },
+    swap: { totalBytes: swapTotal, usedBytes: swapTotal - swapFree },
+    load: { load1, load5, load15 },
+    uptimeSeconds,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+app.get('/api/zfs', async (req, res) => {
+  try {
+    res.json(await getZfsData());
+  } catch (err) {
+    console.error('SSH error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function getZfsData(force = false) {
+  if (!force && zfsCache && Date.now() - new Date(zfsCache.timestamp).getTime() < 30_000) return zfsCache;
+  const [zpoolRaw, zfsRaw, statusRaw, snapRaw] = await Promise.all([
+    sshExec('zpool list -H -o name,size,alloc,free,frag,cap,dedup,health'),
+    sshExec('zfs list -H -o name,used,avail,refer,mountpoint,type,volsize'),
+    sshExec('zpool status'),
+    sshExec('zfs list -t snapshot -H -p -o name,used,refer,creation'),
+  ]);
+
+  const pools = parseZpoolList(zpoolRaw);
+  const datasets = parseZfsList(zfsRaw);
+  const statusData = parseZpoolStatus(statusRaw);
+  const snapshots = parseSnapshots(snapRaw);
+
+  for (const pool of pools) {
+    const status = statusData.find(s => s.name === pool.name);
+    if (status) {
+      pool.scan = status.scan;
+      pool.errors = status.errors;
+      pool.vdevs = status.vdevs;
+      pool.configRaw = status.configRaw;
+    }
+  }
+
+  zfsCache = { pools, datasets, snapshots, timestamp: new Date().toISOString() };
+  return zfsCache;
+}
+
+// Proxmox guest list (LXC + VMs)
+app.get('/api/guests', async (req, res) => {
+  try {
+    res.json({ guests: await getGuests() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -264,12 +433,65 @@ app.post('/api/guests/:id/action', express.json(), async (req, res) => {
   else if (type === 'vm' && vmCmds[action]) cmd = `${vmCmds[action]} ${vmid}`;
   else return res.status(400).json({ error: 'Invalid type or action' });
 
+  const result = await sshExecCapture(cmd);
+  pushActivity(action, `${type} ${vmid}`, result);
+  if (result.exitCode !== 0 && !/already (running|stopped|shutdown)|not running/i.test(result.stderr)) {
+    return res.status(500).json({ error: result.stderr || result.stdout || `exit ${result.exitCode}` });
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/guests/:id/:action(start|stop|shutdown|restart|pause|resume|snapshot)', async (req, res) => {
+  const vmid = parseInt(req.params.id, 10);
+  if (!vmid || vmid < 1 || vmid > 999999) return res.status(400).json({ error: 'Invalid VMID' });
+  const action = req.params.action;
   try {
-    await sshExec(cmd).catch(err => {
-      // Treat "already running/stopped" as non-fatal
-      if (/already (running|stopped|shutdown)|not running|already running/i.test(err.message)) return;
-      throw err;
-    });
+    const guests = await getGuests();
+    const guest = guests.find(g => g.vmid === vmid);
+    if (!guest) return res.status(404).json({ error: 'Guest not found' });
+
+    if (action === 'snapshot') {
+      const zfs = await getZfsData(true);
+      const datasets = zfs.datasets
+        .map(ds => ds.name)
+        .filter(name => new RegExp(`/(?:vm|subvol)-${vmid}-disk-\\d+$`).test(name));
+      if (datasets.length === 0) return res.status(404).json({ error: 'No guest datasets found' });
+      const snapname = `manual-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 13)}`;
+      const result = await sshExecCapture(datasets.map(ds => `zfs snapshot ${ds}@${snapname}`).join(' && '));
+      pushActivity('snapshot', `${guest.type} ${vmid}`, result);
+      if (result.exitCode !== 0) return res.status(500).json({ error: result.stderr || result.stdout || `exit ${result.exitCode}` });
+      zfsCache = null;
+      return res.json({ ok: true, snapshots: datasets.map(ds => `${ds}@${snapname}`) });
+    }
+
+    const cmdMap = {
+      lxc: { start: 'pct start', stop: 'pct stop', shutdown: 'pct shutdown', restart: 'pct reboot', pause: '', resume: '' },
+      vm: { start: 'qm start', stop: 'qm stop', shutdown: 'qm shutdown', restart: 'qm reset', pause: 'qm suspend', resume: 'qm resume' },
+    };
+    const prefix = cmdMap[guest.type][action];
+    if (!prefix) return res.status(400).json({ error: `${action} is not available for ${guest.type}` });
+    const result = await sshExecCapture(`${prefix} ${vmid}`);
+    pushActivity(action, `${guest.type} ${vmid}`, result);
+    if (result.exitCode !== 0 && !/already (running|stopped|shutdown)|not running/i.test(result.stderr)) {
+      return res.status(500).json({ error: result.stderr || result.stdout || `exit ${result.exitCode}` });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/guests/:id', async (req, res) => {
+  const vmid = parseInt(req.params.id, 10);
+  if (!vmid || String(req.query.confirm) !== String(vmid)) return res.status(400).json({ error: 'typed VMID confirmation required' });
+  try {
+    const guests = await getGuests();
+    const guest = guests.find(g => g.vmid === vmid);
+    if (!guest) return res.status(404).json({ error: 'Guest not found' });
+    if (guest.status === 'running') return res.status(409).json({ error: 'Refusing to delete a running guest' });
+    const result = await sshExecCapture(`${guest.type === 'lxc' ? 'pct destroy' : 'qm destroy'} ${vmid}`);
+    pushActivity('delete', `${guest.type} ${vmid}`, result);
+    if (result.exitCode !== 0) return res.status(500).json({ error: result.stderr || result.stdout || `exit ${result.exitCode}` });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -279,49 +501,7 @@ app.post('/api/guests/:id/action', express.json(), async (req, res) => {
 // ---- Host Health ----
 app.get('/api/host', async (req, res) => {
   try {
-    const [memRaw, loadRaw, uptimeRaw, nProcRaw, cpuRaw] = await Promise.all([
-      sshExec('cat /proc/meminfo'),
-      sshExec('cat /proc/loadavg'),
-      sshExec('cat /proc/uptime'),
-      sshExec('nproc'),
-      sshExec(
-        "awk '/^cpu /{u=$2+$4;t=$2+$3+$4+$5+$6+$7+$8;printf \"%d %d\\n\",u,t}' /proc/stat;" +
-        "sleep 0.5;" +
-        "awk '/^cpu /{u=$2+$4;t=$2+$3+$4+$5+$6+$7+$8;printf \"%d %d\\n\",u,t}' /proc/stat"
-      ),
-    ]);
-
-    // /proc/meminfo (values in kB)
-    const memMap = {};
-    for (const line of memRaw.trim().split('\n')) {
-      const m = line.match(/^(\w+):\s+(\d+)/);
-      if (m) memMap[m[1]] = parseInt(m[2]) * 1024;
-    }
-    const memTotal = memMap.MemTotal  || 0;
-    const memAvail = memMap.MemAvailable || 0;
-    const swapTotal = memMap.SwapTotal || 0;
-    const swapFree  = memMap.SwapFree  || 0;
-
-    // /proc/loadavg
-    const [load1, load5, load15] = loadRaw.trim().split(' ').map(parseFloat);
-
-    // /proc/uptime
-    const uptimeSeconds = Math.floor(parseFloat(uptimeRaw.trim().split(' ')[0]));
-
-    // CPU (two samples 500 ms apart)
-    const cpuLines = cpuRaw.trim().split('\n');
-    const [u1, t1] = cpuLines[0].split(' ').map(Number);
-    const [u2, t2] = cpuLines[1] ? cpuLines[1].split(' ').map(Number) : [u1, t1 + 1];
-    const cpuPct = t2 - t1 > 0 ? ((u2 - u1) / (t2 - t1)) * 100 : 0;
-
-    res.json({
-      cpu: { pct: Math.round(cpuPct * 10) / 10, cores: parseInt(nProcRaw.trim()) || 1 },
-      mem: { totalBytes: memTotal, usedBytes: memTotal - memAvail, availBytes: memAvail },
-      swap: { totalBytes: swapTotal, usedBytes: swapTotal - swapFree },
-      load: { load1, load5, load15 },
-      uptimeSeconds,
-      timestamp: new Date().toISOString(),
-    });
+    res.json(await getHostHealth());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -591,6 +771,113 @@ app.put('/api/users/:name/password', express.json(), async (req, res) => {
       child.stdin.end();
     });
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---- Proxmox dashboard combined surface ----
+app.get('/api/state', async (req, res) => {
+  try {
+    const emptyZfs = { pools: [], datasets: [], snapshots: [], timestamp: new Date().toISOString() };
+    const [host, guests, zfs, updates, guestsConfig] = await Promise.all([
+      getHostHealth().catch(() => null),
+      getGuests().catch(() => []),
+      getZfsData().catch(() => zfsCache || emptyZfs),
+      getUpdates(),
+      readGuestsConfig().catch(() => defaultGuestsConfig()),
+    ]);
+    res.json({
+      host,
+      guests,
+      pools: zfs.pools,
+      datasets: zfs.datasets,
+      snapshots: zfs.snapshots,
+      updates,
+      activity: activityLog,
+      guestsConfig,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/storage', async (req, res) => {
+  try {
+    res.json(await getZfsData());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/snapshots', async (req, res) => {
+  try {
+    const zfs = await getZfsData();
+    res.json({ snapshots: zfs.snapshots, timestamp: zfs.timestamp });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/snapshots', async (req, res) => {
+  const { datasets, name, recursive } = req.body || {};
+  if (!Array.isArray(datasets) || datasets.length === 0 || !name) return res.status(400).json({ error: 'datasets and name required' });
+  if (!/^[a-zA-Z0-9_\-.]+$/.test(name)) return res.status(400).json({ error: 'Invalid snapshot name' });
+  for (const dataset of datasets) {
+    if (!/^[a-zA-Z0-9_\-\.\:@\/]+$/.test(dataset)) return res.status(400).json({ error: `Invalid dataset: ${dataset}` });
+  }
+  const commands = datasets.map(dataset => `zfs snapshot ${recursive ? '-r ' : ''}${dataset}@${name}`);
+  const result = await sshExecCapture(commands.join(' && '));
+  pushActivity('snapshot', `${datasets.length} dataset(s)`, result);
+  if (result.exitCode !== 0) return res.status(500).json({ error: result.stderr || result.stdout || `exit ${result.exitCode}` });
+  zfsCache = null;
+  res.json({ ok: true, snapshots: datasets.map(dataset => `${dataset}@${name}`) });
+});
+
+app.delete('/api/snapshots', async (req, res) => {
+  const { snapshot } = req.body || {};
+  if (!snapshot || !/^[a-zA-Z0-9_\-\.\:@\/]+$/.test(snapshot)) return res.status(400).json({ error: 'Invalid snapshot' });
+  const result = await sshExecCapture(`zfs destroy ${snapshot}`);
+  pushActivity('destroy-snapshot', snapshot, result);
+  if (result.exitCode !== 0) return res.status(500).json({ error: result.stderr || result.stdout || `exit ${result.exitCode}` });
+  zfsCache = null;
+  res.json({ ok: true });
+});
+
+app.post('/api/snapshots/rollback', async (req, res) => {
+  const { snapshot } = req.body || {};
+  if (!snapshot || !/^[a-zA-Z0-9_\-\.\:@\/]+$/.test(snapshot)) return res.status(400).json({ error: 'Invalid snapshot' });
+  const result = await sshExecCapture(`zfs rollback -r ${snapshot}`);
+  pushActivity('rollback', snapshot, result);
+  if (result.exitCode !== 0) return res.status(500).json({ error: result.stderr || result.stdout || `exit ${result.exitCode}` });
+  zfsCache = null;
+  res.json({ ok: true });
+});
+
+app.get('/api/updates', async (req, res) => {
+  res.json(await getUpdates());
+});
+
+app.get('/api/activity', (req, res) => {
+  res.json({ activity: activityLog });
+});
+
+app.get('/api/config/guests', async (req, res) => {
+  try {
+    res.json(await readGuestsConfig());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/config/guests', async (req, res) => {
+  const config = req.body || {};
+  if (config.guests && typeof config.guests !== 'object') return res.status(400).json({ error: 'guests must be an object' });
+  try {
+    await fs.mkdir(CONFIG_DIR, { recursive: true });
+    await fs.writeFile(path.join(CONFIG_DIR, 'guests.json'), JSON.stringify(config, null, 2) + '\n');
+    res.json(await readGuestsConfig());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
