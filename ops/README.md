@@ -6,6 +6,8 @@ Every change we make on WTR or a guest, beyond what the guest's installer gave u
 ops/
   bin/push <id-name>     copy guests/<id-name>/files/ onto that guest's /
   bin/check [id-name…]   run each guest's check.sh inside it; prints only problems
+  bin/unifi <cmd>        read-only UniFi queries: networks, clients, known, reservations, devices
+                         (key in Keychain as `unifi-api`; it can write, so make changes only when asked)
   guests/<id>-<name>/
     README.md            what the guest is, what we changed and why (with dates)
     files/               files to install, laid out as a root filesystem

@@ -8,6 +8,10 @@ This repo is the onas dashboard, and also the place to start when Oren says "X i
 - Run commands inside an LXC with `pct exec <id> -- <cmd>`; VMs with `qm`.
 - `pct list` / `qm list` give the live inventory. Static IPs: `pct config <id> | grep ip=`.
 
+## Domains
+
+Convention (Oren, 2026-10-21): **teich.network** names things inside the home network (LAN or Tailscale, through Caddy). **teich.net** names things on the public internet (Cloudflare Workers and Pages, e.g. p.teich.net). Public property and business hostnames use their own domains (gate.d4f.com, *.asphaltanchors.com) through Cloudflare tunnels.
+
 ## Request path for `*.teich.network`
 
 DNS points `*.teich.network` at **192.168.2.5 = LXC 101 `caddy`**, which terminates TLS (wildcard cert via Cloudflare DNS challenge) and proxies by host:
@@ -30,6 +34,8 @@ Anything we change on a guest beyond its stock install goes in `ops/guests/<vmid
 - **Immich** is installed by the community-scripts `update` script into `/opt/immich` (not Docker). `immich-web` Requires `immich-ml`, so an ML failure takes the web UI down too. An interrupted `update` can leave a duplicated `packageImportMethod: hardlink` in `/opt/immich/source/pnpm-workspace.yaml`; delete the duplicate and rerun `update`. Logs: `/var/log/immich/{web,ml}.log`.
 - After a WTR reboot, check `systemctl --failed` inside the guests. Services can hit systemd's start limit within a second and stay down.
 
-## Other guests worth knowing
+## Inventory
 
-`gamm` (117) is the Google Ads MCP gateway (code in `~/src/aac/gamm`). `dash` (105) is the production BI stack. `patchmon` (114) tracks pending updates. `uptimekuma` (111) monitors uptime. `proxmox-backup-server` (112) is at 192.168.2.9. Service write-ups live in Notion (Docs, Area = Operations).
+[ops/INVENTORY.md](ops/INVENTORY.md) lists every guest, what it runs, its IP and the known gaps. Update it when guests are added or removed. Service write-ups live in Notion (Docs, Area = Operations). The backlog is the Notion Work overview row [WTR home server operations](https://app.notion.com/p/400a91fefc7581c2b6aefb02d3a41530); tick items off there as they're done.
+
+Cloudflare: the `cf` CLI is authenticated for two accounts, so set `CLOUDFLARE_ACCOUNT_ID`. AAC is `805dfbc806bf099214ef74cdb7d21dc7` and Teich is `02bd603968db4f77d62a3c447ee329a2`. Start with `cf cli search "<task>"` rather than `--help`.
