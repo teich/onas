@@ -90,7 +90,64 @@ Checked with `ops/bin/unifi` on 2026-10-21.
 
 Removed 11 reservations unused for a year or more, at Oren's request. Four of them (.3 homeassistant, .5 toodle, .13 UNMS, .20 IotaWatt-Garage) sat on the static IPs of haos, caddy, immich and evcc. The others were .8, .12 ha-bv, .11 unifi, .14 mineos-bv, .15 tick, .136 ampvm and .216 rustdeskserver, together with its dead local DNS record `rustdesk.teich.network`. The client records were kept; only the fixed IPs were removed.
 
-## Outside WTR: Cloudflare (Teich account)
+## Cloudflare and Vercel
 
-- **Workers**: `photos` (likely p.teich.net, public photo site, github.com/teich/photos), `garden`, `cpc`, `zednine` **?**
-- **Pages**: strixvan.com, pdrhighlights.com, 2026-span.teich.net, sa-course-guide.pages.dev **?**
+Checked on 2026-10-21 with `cf` 1.0.0-beta.20 and `vercel` 59.23. Status codes come from an HTTPS request to each hostname. **?** marks an open question for Oren.
+
+### Accounts
+
+- **Cloudflare AAC** (`805dfbc806bf099214ef74cdb7d21dc7`): 10 zones, all on the Free plan.
+  - Workers: shopify-ip-geo, asphalt-anchors-mockup, testlog-web, asphalt-anchors-sites, sink, tools, asphalt-anchors-brand, landing.
+  - Pages: help (help.asphaltanchors.com).
+  - Storage: R2 buckets pbs-backup, quickbooks-backup, sink and testlog-web-files (2.35 GB in total, so **the backup buckets are effectively empty**). D1 databases testlog-web, sink, tools-margin-tracker and aac-fyi-db. KV namespace sink.
+  - Access: testlog. Tunnel: BV_AAC.
+- **Cloudflare Teich** (`02bd603968db4f77d62a3c447ee329a2`): 13 zones.
+  - Workers: garden, photos, cpc, zednine.
+  - Pages: sa-course-guide, pdrhighlights-site, 2026-presentation.
+  - Storage: R2 buckets photos and pdrhighlights (1.1 GB). D1 database tennis-scheduler-db.
+  - Tunnels: HOMELAB_PROD, p-teich (down) and phone-gate (down).
+- **Vercel** team `orent` (Hobby plan): projects teich (teich.net), simantob (simantob.com), v0-geology-portfolio-design and v0-shopify-storefront-design (never deployed to production). Domains added in Vercel: teich.net, simantob.com and d4f.com (**d4f.com has no DNS pointing at Vercel**, so that entry is stale). All production deploys are Ready.
+
+### Zones
+
+| Zone | Acct | What it serves | Registrar / expiry |
+|------|------|----------------|--------------------|
+| asphaltanchors.com | AAC | Shopify store (apex, www). Workers: brand, frontline, geoip, go, mockup, testlog (behind Access), tools. help → Pages. Google mail. news keeps its SES MX and SPF records (for sending). n8n → BV_AAC tunnel | CF, 2027-05-12 |
+| asphalt-anchors.com | AAC | GoDaddy parking/forwarding (proxied) + GoDaddy mail; brand → Worker | CF, 2027-05-12 |
+| askaac.com | AAC | GoDaddy forwarding IPs (proxied); Google mail | elsewhere **?** |
+| bolt-hold.com | AAC | GoDaddy forwarding IPs and GoDaddy mail subdomains | elsewhere **?** |
+| aac.fyi | AAC | Worker → redirect to asphaltanchors.com | elsewhere **?** |
+| asphaltanchorscorp.com | AAC | Redirect to asphaltanchors.com; Google mail | elsewhere **?** |
+| boltholdanchor.com, boltholdanchors.com | AAC | Cloudflare placeholder page | CF, 2027-09-08 |
+| designatedparking.com | AAC | Wix site (www); Google mail; old mail/store/m hosts | elsewhere **?** |
+| dp-corp.com | AAC | GoDaddy forwarding + GoDaddy mail | CF, 2028-08-16 |
+| teich.net | Teich | Vercel (apex, www, scheduler). Workers: p and photos (photo site), garden, 9fji. 2026-span → Pages. blog → Squarespace. store → 3.131.150.69 (shared redirect service, unconfigured). Google mail | CF, 2033-06-02 |
+| teich.network | Teich | `*` → LAN (Caddy, unproxied); photos → tunnel p-teich. No apex record (deleted 2026-10-21) | CF, 2027-10-07 |
+| d4f.com | Teich | gate → HOMELAB_PROD tunnel (gatey); Fastmail mail | CF, 2030-06-02 |
+| simantob.com | Teich | Vercel; Google mail | CF, 2027-06-02 |
+| zednine.com | Teich | Worker zednine; blobs → R2; Google mail | CF, 2027-06-02 |
+| constancepeck.com, constancepeckcollection.com | Teich | Worker (both); Google mail | CF, 2027-06-02 |
+| pdrhighlights.com | Teich | Pages; dl → R2; Cloudflare Email Routing | CF, 2027-03-01 |
+| strixvan.com | Teich | Nothing. Van sold; Pages project and DNS deleted 2026-10-21 | CF, 2027-06-28, auto-renew off (left to lapse) |
+| canvaslabs.com | Teich | 3.131.150.69, a shared redirect service on AWS EC2 (probably a former DNS provider's URL forwarding), redirecting to usecanvas.com | CF, 2027-10-20 |
+| zed9.org | Teich | Google mail only | CF, 2027-01-29 |
+| highlanddesignboulder.com, usecanvas.com | Teich | No records (parked) | CF, 2027-09-20 / 2027-01-26 |
+
+### Broken or suspicious (2026-10-21)
+
+Deleted on 2026-10-21 at Oren's request: qb.asphaltanchors.com (an unused RustDesk proxy idea), a.teich.net (dangling Vercel CNAME with an expired certificate) the teich.network apex (pointed at the old WAN IP), the news. and survey.asphaltanchors.com A records (their VPS was hacked and deleted), and strixvan.com (Pages project and DNS; the van is sold).
+
+- **AAC, customer-facing**
+  - n8n.asphaltanchors.com returns **502** (n8n was removed).
+  - asphalt-anchors.com fails the TLS handshake and www returns 404. askaac.com, bolt-hold.com and www.asphaltanchorscorp.com time out. dp-corp.com returns **525**. These are GoDaddy forwarding IPs behind Cloudflare's proxy, which doesn't work. The goal is zero GoDaddy and zero Wix; nobody uses the GoDaddy mailboxes.
+  - The GoDaddy mail subdomains on bolt-hold.com return 530 or time out.
+  - designatedparking.com: m returns 525 and store returns 523; mail and webmail time out. The main www site (Wix) is fine.
+- **Teich**
+  - blog.teich.net returns 404 (Squarespace).
+  - store.teich.net returns 404, and canvaslabs.com returns 525; both point at a shared redirect service on AWS. store.teich.net isn't configured there, and canvaslabs.com redirects to usecanvas.com, which has no DNS.
+  - photos.teich.network returns 530 (tunnel p-teich is down).
+  - The Vercel domain entry for d4f.com is stale.
+- **Working as expected**
+  - 2026-span.teich.net returns 401 (password-protected).
+  - testlog redirects to Cloudflare Access.
+  - blobs.zednine.com and dl.pdrhighlights.com return 404 at the root, which is normal for public R2 buckets.
