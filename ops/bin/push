@@ -1,0 +1,16 @@
+#!/bin/sh
+# Copy ops/guests/<id-name>/files/ onto that guest's root filesystem.
+# Usage: ops/bin/push 101-caddy
+set -eu
+
+HOST=${WTR_HOST:-root@192.168.2.2}
+OPS=$(cd "$(dirname "$0")/.." && pwd)
+guest=${1:?usage: push <id-name>}
+dir="$OPS/guests/$guest"
+id=${guest%%-*}
+
+[ -d "$dir/files" ] || { echo "no files/ in $dir" >&2; exit 1; }
+
+COPYFILE_DISABLE=1 tar -C "$dir/files" --uid 0 --gid 0 --no-mac-metadata --no-xattrs -cf - . \
+	| ssh "$HOST" "pct exec $id -- tar -xpf - -C / --no-overwrite-dir"
+echo "pushed $guest"

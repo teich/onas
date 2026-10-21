@@ -1,0 +1,22 @@
+#!/bin/sh
+# Managed by onas/ops/guests/101-caddy. Edit there, then `ops/bin/push 101-caddy`.
+#
+# The Debian caddy package ships a stock binary without the Cloudflare DNS
+# module our wildcard cert needs. Runs after every dpkg invocation (see
+# /etc/apt/apt.conf.d/99caddy-cloudflare) and rebuilds caddy if the module is gone.
+set -u
+
+MODULE=dns.providers.cloudflare
+PACKAGE=github.com/caddy-dns/cloudflare
+
+command -v caddy >/dev/null 2>&1 || exit 0
+caddy list-modules 2>/dev/null | grep -qx "$MODULE" && exit 0
+
+logger -t caddy-ensure-cloudflare "module $MODULE missing after package change; running caddy add-package"
+if caddy add-package "$PACKAGE" >/dev/null 2>&1; then
+	systemctl restart caddy
+	logger -t caddy-ensure-cloudflare "rebuilt caddy with $PACKAGE and restarted"
+else
+	logger -t caddy-ensure-cloudflare "caddy add-package failed; caddy is likely down"
+	exit 1
+fi

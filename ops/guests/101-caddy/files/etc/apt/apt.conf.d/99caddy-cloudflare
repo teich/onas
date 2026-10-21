@@ -1,0 +1,2 @@
+// Managed by onas/ops/guests/101-caddy. Re-adds the Cloudflare DNS module after caddy upgrades.
+DPkg::Post-Invoke { "/usr/local/sbin/caddy-ensure-cloudflare || true"; };

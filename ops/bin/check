@@ -1,0 +1,25 @@
+#!/bin/sh
+# Run every guest's check.sh inside that guest. Prints problems only; exits 1 if any.
+# Usage: ops/bin/check [id-name ...]
+set -u
+
+HOST=${WTR_HOST:-root@192.168.2.2}
+OPS=$(cd "$(dirname "$0")/.." && pwd)
+status=0
+
+if [ $# -eq 0 ]; then
+	set -- $(cd "$OPS/guests" && ls)
+fi
+
+for guest in "$@"; do
+	script="$OPS/guests/$guest/check.sh"
+	[ -f "$script" ] || continue
+	id=${guest%%-*}
+	out=$(ssh "$HOST" "pct exec $id -- sh -s" < "$script" 2>&1) || {
+		status=1
+		echo "$out" | sed "s/^/$guest: /"
+	}
+done
+
+[ $status -eq 0 ] && echo "all checks pass"
+exit $status
