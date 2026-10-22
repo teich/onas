@@ -11,6 +11,8 @@ Samba file server for the `bulk` datasets (media, backups, photos, videos, roms,
 - **HTTPS over Tailscale** (2026-10-22): Oren joined the guest to the tailnet as `onas.giraffe-gamma.ts.net`, and `tailscale serve --bg --https=443 http://127.0.0.1:3000` publishes the app at https://onas.giraffe-gamma.ts.net (tailnet only). HTTPS matters: browsers only expose WebGPU, which the storage map, snapshot timeline and heatmap use, in a secure context. `tailscale serve status` shows it; the config persists in tailscaled's state.
 - **State** is in `/var/lib/onas/onas.db` (SQLite). It's safe to delete when onas is stopped; collectors refill it within a minute, but metric history and the activity log are lost.
 - **SSH to WTR**: onas uses root's key to reach `root@192.168.2.2` for what the Proxmox API can't do (ZFS datasets and snapshots), and for everything until the API tokens exist.
+- **Front LCD frame** (2026-10-22): `/api/lcd/frame` serves the picture for WTR's physical front screen. `wtr-lcd` on the host fetches it every second (see [ops/host](../../host/README.md)); if onas stops serving it, the screen switches to its own fallback within a few seconds and `ops/bin/check host` reports it after 5 minutes. `deploy` builds the renderer (`server/lcd-render.cjs`) from `client/src/lib/lcd.ts`.
+- **`TZ=America/Los_Angeles` in `onas.service`** (2026-10-22): the container runs on UTC, and the frame's clock is drawn in onas's local time. Nothing else in onas uses local time.
 
 ## Deploy
 

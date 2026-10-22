@@ -20,6 +20,9 @@ app.use(express.static(PUBLIC));
 
 app.get('/api/state', (req, res) => res.json(buildState()));
 
+// The front LCD's picture, fetched once a second by wtr-lcd on WTR.
+app.get('/api/lcd/frame', require('./lcd').frame);
+
 // Push the full state whenever a collector finishes or an action is recorded. Bursts of
 // changes are coalesced so a client gets at most one update every 500 ms.
 const clients = new Set();

@@ -10,6 +10,8 @@ WorkingDirectory=/opt/onas
 # PVE_COLLECTOR_TOKEN / PVE_ACTIONS_TOKEN; without them onas reads Proxmox with pvesh over SSH.
 EnvironmentFile=-/etc/onas/pve.env
 Environment=NODE_ENV=production ONAS_DB=/var/lib/onas/onas.db ONAS_CONFIG_DIR=/etc/onas PVE_CA=/etc/onas/pve-ca.pem
+# House time for the front LCD's clock (the container itself runs on UTC).
+Environment=TZ=America/Los_Angeles
 ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning server/index.js
 RuntimeDirectory=onas
 StateDirectory=onas
