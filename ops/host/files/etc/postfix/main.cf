@@ -1,0 +1,35 @@
+# Managed in onas ops/host. Edit there and run `ops/bin/push host`.
+# See /usr/share/postfix/main.cf.dist for a commented, more complete version
+
+myhostname=wtr.local
+
+smtpd_banner = $myhostname ESMTP $mail_name (Debian/GNU)
+biff = no
+
+# appending .domain is the MUA's job.
+append_dot_mydomain = no
+
+# Uncomment the next line to generate "delayed mail" warnings
+#delay_warning_time = 4h
+
+alias_maps = hash:/etc/aliases
+alias_database = hash:/etc/aliases
+mydestination = $myhostname, localhost.$mydomain, localhost
+recipient_delimiter = +
+
+compatibility_level = 2
+
+# Outbound port 25 is blocked, so relay through Gmail submission as oren@teich.net.
+# The app password lives only on WTR in /etc/postfix/sasl_passwd (root, 0600).
+relayhost = [smtp.gmail.com]:587
+smtp_sasl_auth_enable = yes
+smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+smtp_sasl_security_options = noanonymous
+smtp_tls_security_level = encrypt
+smtp_tls_CAfile = /etc/ssl/certs/ca-certificates.crt
+# WTR has no IPv6 route out; don't try it.
+inet_protocols = ipv4
+
+# Accept mail from PBS (LXC 112) on the LAN and relay it with the rest.
+inet_interfaces = 127.0.0.1, 192.168.2.2
+mynetworks = 127.0.0.0/8, 192.168.2.9/32

@@ -21,7 +21,7 @@ IP "dhcp → x" means the address isn't pinned (it may be a DHCP reservation, **
 |----|------|----|------------|-------|
 | 100 | haos (VM) | ? | Home Assistant OS | 2 c / 4 G |
 | 101 | caddy | 192.168.2.5 | TLS + reverse proxy for `*.teich.network` (home, evcc, immich) | Customized, see `ops/guests/101-caddy` |
-| 102 | homepage | 192.168.2.4 | gethomepage dashboard (:3000) | Mounts host `/`, `/bulk` and `/fast` read-only (for disk widgets?) |
+| 102 | homepage | 192.168.2.4 | gethomepage dashboard (:3000), home.teich.network. Config is managed in `ops/guests/102-homepage`; secrets live in `/opt/homepage/.env` | Mounts host `/`, `/bulk` and `/fast` read-only (for disk widgets?) |
 | 103 | immich | 192.168.2.13 | Immich 3.3.4 (bare-metal install, Postgres 16, Redis) | Photos from `/bulk/photos`. Also on Tailscale. 12 cores |
 | 104 | arr | dhcp → .119 | Docker: Jellyfin, Sonarr, Radarr, SABnzbd, qBittorrent, Audiobookshelf, Booklore (`grimmory` image), MariaDB | `/bulk/media`, `/fast/apps`; iGPU passthrough; Tailscale |
 | 105 | dash | VLAN5 dhcp → 192.168.5.30 | **AAC** production BI: Postgres 16, importer, dashboard, rclone Dropbox sync | Tailscale `dash.grouse-crested.ts.net`. No PatchMon agent |
@@ -56,7 +56,7 @@ Removed 2026-10-21 09:05 by oren@pve (cruft, confirmed): 120 ollama, 121 n8n. Th
 - **Guest backups**: nightly at 21:00 to PBS, all guests, snapshot mode. Retention: 7 daily, 4 weekly, 12 monthly, 1 yearly. Succeeding every night.
 - **Not backed up**: bind mounts are excluded from guest backups. That leaves out `/bulk/photos`, `/bulk/media`, `/bulk/videos`, `/fast/apps` (the arr configs) and `/bulk/backups` itself. These datasets have **no automatic ZFS snapshots** (only manual ones from 2026-10-13) and **no offsite copy**.
 - **PBS is on the same pool it protects.** Losing `bulk` loses both the data and the backups.
-- **Alert email doesn't work.** Postfix sends straight to smtp.google.com:25, outbound port 25 is blocked, and 11 messages are stuck in the queue. Backup, ZFS and SMART alerts never arrive.
+- **Alert email** (fixed 2026-10-21): WTR's Postfix relays through Gmail (smtp.gmail.com:587, app password for oren@teich.net) and PBS relays through WTR. See `ops/host`. Before the fix, port 25 was blocked and alerts had been stuck since at least 2026-10-18.
 - `/bulk/backups` also holds AAC, Cadillac, m1-laptop and `DELETE-oren-m1-laptop` folders **?**
 
 ## Patch state (apt upgradable, 2026-10-21)

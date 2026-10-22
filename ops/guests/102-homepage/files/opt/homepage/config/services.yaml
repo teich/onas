@@ -1,0 +1,238 @@
+# Managed by onas/ops/guests/102-homepage. Edit there, then `ops/bin/push 102-homepage`.
+# Secrets are {{HOMEPAGE_VAR_*}} placeholders filled from /opt/homepage/.env on the guest.
+# Tailnet-only links (*.ts.net) can't be health-checked from this LXC, so they use
+# proxmoxVMID for a running/stopped dot instead of siteMonitor.
+
+- Home & Property:
+    - EVCC:
+        icon: evcc
+        href: https://evcc.teich.network/
+        description: Solar and EV charging
+        proxmoxNode: wtr
+        proxmoxVMID: 110
+        proxmoxType: lxc
+        widget:
+          type: evcc
+          url: https://evcc.teich.network
+          fields:
+            - pv_power
+            - grid_power
+            - home_power
+            - charge_power
+    - Home Assistant:
+        icon: home-assistant
+        href: http://192.168.2.3:8123
+        description: Home automation
+        proxmoxNode: wtr
+        proxmoxVMID: 100
+        proxmoxType: qemu
+    - Gate:
+        icon: mdi-gate
+        href: https://gate.d4f.com
+        description: Gatey, gate access for us and neighbors
+        siteMonitor: https://gate.d4f.com
+        proxmoxNode: wtr
+        proxmoxVMID: 107
+        proxmoxType: lxc
+    - Irrigation:
+        icon: mdi-sprinkler-variant
+        href: https://2core.giraffe-gamma.ts.net
+        description: 2core, Tucor controller UI (in development, tailnet)
+        proxmoxNode: wtr
+        proxmoxVMID: 115
+        proxmoxType: lxc
+
+- Infrastructure:
+    - Proxmox:
+        icon: proxmox
+        href: https://192.168.2.2:8006/
+        description: WTR host
+        widget:
+          type: proxmox
+          url: https://192.168.2.2:8006/
+          username: "{{HOMEPAGE_VAR_PROXMOX_USER}}"
+          password: "{{HOMEPAGE_VAR_PROXMOX_PASSWORD}}"
+          fields:
+            - resources.cpu
+            - resources.mem
+    - UniFi:
+        icon: unifi
+        href: https://192.168.2.1
+        description: Bennett-Valley gateway
+        widget:
+          type: unifi
+          url: https://192.168.2.1
+          key: "{{HOMEPAGE_VAR_UNIFI_KEY}}"
+    - Uptime Kuma:
+        icon: uptime-kuma
+        href: http://192.168.2.115:3001
+        description: Uptime checks
+        proxmoxNode: wtr
+        proxmoxVMID: 111
+        proxmoxType: lxc
+        widget:
+          type: uptimekuma
+          url: http://192.168.2.115:3001
+          slug: overall
+    - PatchMon:
+        icon: mdi-shield-sync-outline
+        href: http://192.168.2.122:3000
+        description: Patch status for every guest
+        siteMonitor: http://192.168.2.122:3000
+        proxmoxNode: wtr
+        proxmoxVMID: 114
+        proxmoxType: lxc
+    - Proxmox Backup:
+        icon: proxmox
+        href: https://192.168.2.9:8007
+        description: Nightly guest backups
+        siteMonitor: https://192.168.2.9:8007
+        proxmoxNode: wtr
+        proxmoxVMID: 112
+        proxmoxType: lxc
+    - NAS:
+        icon: mdi-nas
+        href: http://192.168.2.189:3000
+        description: onas, SMB shares and users
+        siteMonitor: http://192.168.2.189:3000
+        proxmoxNode: wtr
+        proxmoxVMID: 119
+        proxmoxType: lxc
+
+- Media Library:
+    - Immich:
+        icon: immich.png
+        href: https://immich.teich.network
+        description: Photos
+        proxmoxNode: wtr
+        proxmoxVMID: 103
+        proxmoxType: lxc
+        widget:
+          type: immich
+          url: https://immich.teich.network
+          key: "{{HOMEPAGE_VAR_IMMICH_KEY}}"
+          version: 2
+    - Jellyfin:
+        icon: jellyfin
+        href: http://arr:8096/
+        description: Video playback
+        proxmoxNode: wtr
+        proxmoxVMID: 104
+        proxmoxType: lxc
+        widget:
+          type: jellyfin
+          url: http://192.168.2.119:8096/
+          key: "{{HOMEPAGE_VAR_JELLYFIN_KEY}}"
+          # Jellyfin 12 dropped the /emby endpoints that version 1 uses.
+          version: 2
+          fields:
+            - movies
+            - series
+            - episodes
+          enableBlocks: true
+          enableNowPlaying: true
+          enableUser: true
+          enableMediaControl: true
+          showEpisodeNumber: true
+          expandOneStreamToTwoRows: false
+    - Audiobookshelf:
+        icon: audiobookshelf
+        href: http://arr:13378
+        description: Audiobooks
+        proxmoxNode: wtr
+        proxmoxVMID: 104
+        proxmoxType: lxc
+        widget:
+          type: audiobookshelf
+          url: http://192.168.2.119:13378/
+          key: "{{HOMEPAGE_VAR_AUDIOBOOKSHELF_KEY}}"
+          fields:
+            - books
+            - booksDuration
+    - Booklore:
+        icon: booklore
+        href: http://arr:6060/dashboard
+        description: Ebooks
+        proxmoxNode: wtr
+        proxmoxVMID: 104
+        proxmoxType: lxc
+        widget:
+          type: booklore
+          # "arr" only resolves over Tailscale, which this LXC doesn't have.
+          url: http://192.168.2.119:6060/
+          username: "{{HOMEPAGE_VAR_BOOKLORE_USER}}"
+          password: "{{HOMEPAGE_VAR_BOOKLORE_PASSWORD}}"
+
+- Media Automation:
+    - Sonarr:
+        icon: sonarr
+        href: http://arr:8989/
+        description: Series
+        proxmoxNode: wtr
+        proxmoxVMID: 104
+        proxmoxType: lxc
+        widget:
+          type: sonarr
+          url: http://192.168.2.119:8989/
+          key: "{{HOMEPAGE_VAR_SONARR_KEY}}"
+    - Radarr:
+        icon: radarr
+        href: http://arr:7878/
+        description: Movies
+        proxmoxNode: wtr
+        proxmoxVMID: 104
+        proxmoxType: lxc
+        widget:
+          type: radarr
+          url: http://192.168.2.119:7878/
+          key: "{{HOMEPAGE_VAR_RADARR_KEY}}"
+    - SABnzbd:
+        icon: sabnzbd
+        href: http://arr:8080/
+        description: Usenet downloads
+        proxmoxNode: wtr
+        proxmoxVMID: 104
+        proxmoxType: lxc
+        widget:
+          type: sabnzbd
+          url: http://192.168.2.119:8080/
+          key: "{{HOMEPAGE_VAR_SABNZBD_KEY}}"
+    - qBittorrent:
+        icon: qbittorrent
+        href: http://arr:8081/
+        description: Torrent downloads
+        proxmoxNode: wtr
+        proxmoxVMID: 104
+        proxmoxType: lxc
+        widget:
+          type: qbittorrent
+          url: http://192.168.2.119:8081
+          username: "{{HOMEPAGE_VAR_QBITTORRENT_USER}}"
+          password: "{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}"
+
+- Asphalt Anchors:
+    - BI Dashboard:
+        icon: mdi-chart-box-outline
+        href: https://dash.grouse-crested.ts.net
+        description: Sales and inventory (AAC tailnet)
+        proxmoxNode: wtr
+        proxmoxVMID: 105
+        proxmoxType: lxc
+    - gamm:
+        icon: mdi-google-ads
+        href: https://gamm.grouse-crested.ts.net
+        description: Google Ads change approvals (AAC tailnet)
+        proxmoxNode: wtr
+        proxmoxVMID: 117
+        proxmoxType: lxc
+    - QuickBooks:
+        icon: mdi-calculator-variant
+        description: Windows VM, reach over RDP (192.168.5.221)
+        proxmoxNode: wtr
+        proxmoxVMID: 108
+        proxmoxType: qemu
+    - Store:
+        icon: shopify
+        href: https://asphaltanchors.com
+        description: Shopify storefront
+        siteMonitor: https://asphaltanchors.com

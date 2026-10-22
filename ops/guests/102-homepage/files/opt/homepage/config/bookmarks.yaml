@@ -1,0 +1,34 @@
+# Managed by onas/ops/guests/102-homepage. Edit there, then `ops/bin/push 102-homepage`.
+
+- Ops:
+    - WTR backlog:
+        - abbr: NO
+          href: https://app.notion.com/p/400a91fefc7581c2b6aefb02d3a41530
+    - Cloudflare:
+        - abbr: CF
+          href: https://dash.cloudflare.com/
+    - Vercel:
+        - abbr: VC
+          href: https://vercel.com/orent
+    - Tailscale:
+        - abbr: TS
+          href: https://login.tailscale.com/admin/machines
+    - UniFi Site Manager:
+        - abbr: UI
+          href: https://unifi.ui.com/
+    - Github:
+        - abbr: GH
+          href: https://github.com/
+    - BV IP addresses:
+        - abbr: IP
+          href: https://docs.google.com/spreadsheets/d/1iypNiHxUr7spgh0DWEVzIInLFMl7xh0_HGgv-5exUyo/edit?gid=0#gid=0
+
+- Social:
+    - Reddit:
+        - abbr: RE
+          href: https://reddit.com/
+
+- Entertainment:
+    - YouTube:
+        - abbr: YT
+          href: https://youtube.com/

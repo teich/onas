@@ -1,0 +1,31 @@
+# Managed by onas/ops/guests/102-homepage. Edit there, then `ops/bin/push 102-homepage`.
+title: Teich Home
+description: Home, property and business services on WTR
+theme: dark
+color: slate
+headerStyle: boxedWidgets
+iconStyle: theme
+useEqualHeights: true
+statusStyle: dot
+disableCollapse: true
+layout:
+  Home & Property:
+    style: row
+    columns: 4
+    icon: mdi-home-lightning-bolt-outline
+  Infrastructure:
+    style: row
+    columns: 3
+    icon: mdi-server
+  Media Library:
+    style: row
+    columns: 4
+    icon: mdi-play-circle-outline
+  Media Automation:
+    style: row
+    columns: 4
+    icon: mdi-download-circle-outline
+  Asphalt Anchors:
+    style: row
+    columns: 4
+    icon: mdi-anchor

@@ -1,0 +1,9 @@
+# Managed by onas/ops/guests/102-homepage. Edit there, then `ops/bin/push 102-homepage`.
+- datetime:
+    text_size: xl
+    format:
+      dateStyle: medium
+      timeStyle: short
+- search:
+    provider: duckduckgo
+    target: _blank

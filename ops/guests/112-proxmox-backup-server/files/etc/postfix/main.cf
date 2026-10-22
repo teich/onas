@@ -1,0 +1,25 @@
+# Managed in onas ops/guests/112-proxmox-backup-server. Edit there and run `ops/bin/push 112-proxmox-backup-server`.
+# See /usr/share/postfix/main.cf.dist for a commented, more complete version
+
+smtpd_banner = $myhostname ESMTP $mail_name (Debian/GNU)
+biff = no
+
+# appending .domain is the MUA's job.
+append_dot_mydomain = no
+
+# Uncomment the next line to generate "delayed mail" warnings
+#delay_warning_time = 4h
+
+alias_maps = hash:/etc/aliases
+alias_database = hash:/etc/aliases
+mydestination = $myhostname, localhost.$mydomain, localhost
+# WTR's Postfix holds the Gmail credentials and relays for us (see ops/host).
+relayhost = [192.168.2.2]:25
+inet_protocols = ipv4
+mynetworks = 127.0.0.0/8
+inet_interfaces = loopback-only
+recipient_delimiter = +
+
+compatibility_level = 2
+
+cyrus_sasl_config_path = /etc/postfix/sasl
