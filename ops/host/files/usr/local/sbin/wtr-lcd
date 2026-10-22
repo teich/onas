@@ -1,0 +1,572 @@
+#!/usr/bin/python3
+# Drive WTR's front LCD (the AOOSTAR WTR MAX's 960 x 376 panel) with live status. Managed in onas
+# ops/host; see ops/host/README.md.
+#
+# Once a second: fetch the frame onas draws (GET /api/lcd/frame, 240 x 94 RGB, the same drawLcd()
+# as the Machine view), draw each dot as a 3 x 3 pixel square with a 1-pixel gap, and send the
+# panel only the parts that changed. When onas doesn't answer, draw a smaller panel from local
+# sensors with the reason in the footer, so the screen never freezes on old numbers.
+#
+# The panel is a Synwit MCU on USB (0416:90a1, cdc_acm). Protocol as reverse-engineered by
+# github.com/zehnm/aoostar-rs (docs/lcd_protocol.md) from the vendor's Windows app: 8-byte on/off
+# commands, and an image as 47-byte RGB565 chunks, each with its byte offset. The panel answers 'A'.
+#
+#   wtr-lcd            run (the service)
+#   wtr-lcd --once     draw one frame and exit
+#   wtr-lcd --off      switch the panel off; --on switches it back on, showing the last image
+#
+# Python standard library only. Writes its state to $WTR_LCD_STATUS for ops/host/check.sh.
+import os
+import select
+import signal
+import struct
+import subprocess
+import sys
+import termios
+import time
+import tty
+import urllib.error
+import urllib.request
+
+DEVICE = os.environ.get('WTR_LCD_DEVICE', '/dev/serial/by-id/usb-Synwit_USB_Virtual_COM-if00')
+FRAME_URL = os.environ.get('WTR_LCD_FRAME_URL', 'http://192.168.2.189:3000/api/lcd/frame')
+STATUS_FILE = os.environ.get('WTR_LCD_STATUS', '/run/wtr-lcd/status')
+
+COLS, ROWS, DOT = 240, 94, 4             # the dot grid; 4 pixels per dot fills the panel exactly
+WIDTH, HEIGHT = COLS * DOT, ROWS * DOT   # 960 x 376
+FRAME_BYTES = COLS * ROWS * 3
+FAILS_BEFORE_FALLBACK = 3                # a hiccup keeps the last frame; three misses in a row don't
+
+# ---------- the panel ----------
+
+MAGIC = b'\xaa\x55\xaa\x55'
+CMD_ON = MAGIC + b'\x0b\x00\x00\x00'
+CMD_OFF = MAGIC + b'\x0a\x00\x00\x00'
+IMG_START = MAGIC + b'\x05\x00\x00\x00\x04\x00\x0f\x2f\x00\x04\x0b\x00'
+IMG_CHUNK = MAGIC + b'\x08\x00\x00\x00'
+IMG_END = MAGIC + b'\x06\x00\x00\x00'
+CHUNK = 47                               # bytes of pixels per message, as the vendor app sends
+
+
+class PanelError(Exception):
+    pass
+
+
+class Panel:
+    def __init__(self, device):
+        self.fd = os.open(device, os.O_RDWR | os.O_NOCTTY)
+        tty.setraw(self.fd)
+        attrs = termios.tcgetattr(self.fd)
+        attrs[2] |= termios.CLOCAL | termios.CREAD
+        attrs[4] = attrs[5] = termios.B1500000  # nominal; USB CDC ignores it
+        termios.tcsetattr(self.fd, termios.TCSANOW, attrs)
+        termios.tcflush(self.fd, termios.TCIOFLUSH)
+        self.shown = None                     # the RGB565 frame the panel has, for partial updates
+
+    def close(self):
+        os.close(self.fd)
+
+    # One message per write, drained before the next, as aoostar-rs does: the firmware may expect
+    # each message in its own USB transfer.
+    def _send(self, data):
+        view = memoryview(data)
+        while view:
+            view = view[os.write(self.fd, view):]
+        termios.tcdrain(self.fd)
+
+    def _acked(self, timeout):
+        deadline = time.monotonic() + timeout
+        got = b''
+        while b'A' not in got:
+            left = deadline - time.monotonic()
+            if left <= 0 or not select.select([self.fd], [], [], left)[0]:
+                return False
+            got += os.read(self.fd, 64)
+        return True
+
+    def command(self, cmd):
+        termios.tcflush(self.fd, termios.TCIFLUSH)
+        self._send(cmd)
+        if not self._acked(2.0):
+            raise PanelError('no reply to command')
+
+    # Send the chunks of `frame` (RGB565, little-endian) that differ from what the panel shows.
+    # Returns the number of chunks sent.
+    def show(self, frame):
+        old = self.shown
+        changed = [o for o in range(0, len(frame), CHUNK) if old is None or frame[o:o + CHUNK] != old[o:o + CHUNK]]
+        if not changed:
+            return 0
+        termios.tcflush(self.fd, termios.TCIFLUSH)
+        self.shown = None  # unknown until the panel confirms
+        self._send(IMG_START)
+        for o in changed:
+            self._send(IMG_CHUNK + struct.pack('<I', o) + frame[o:o + CHUNK])
+        self._send(IMG_END)
+        if not self._acked(2.0):
+            raise PanelError('no reply to image')
+        self.shown = frame
+        return len(changed)
+
+
+# 240 x 94 RGB888 -> 960 x 376 RGB565: each dot a 3 x 3 square, black between dots.
+def expand(rgb):
+    gap = b'\x00\x00'
+    dots = {}
+    blank = gap * WIDTH
+    lines = []
+    for y in range(ROWS):
+        row = rgb[y * COLS * 3:(y + 1) * COLS * 3]
+        parts = []
+        for x in range(0, COLS * 3, 3):
+            key = row[x:x + 3]
+            dot = dots.get(key)
+            if dot is None:
+                r, g, b = key
+                px = (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)).to_bytes(2, 'little')
+                dot = dots[key] = px * 3 + gap
+            parts.append(dot)
+        line = b''.join(parts)
+        lines.append(line * 3 + blank)
+    return b''.join(lines)
+
+
+# ---------- the fallback panel, drawn here ----------
+# The look of client/src/lib/lcd.ts (its palette, fonts and meters), with only what WTR can read
+# by itself. The fonts and colours are copied from there; keep them in step.
+
+INK, INK2, MUTED, DIM = '#f0efec', '#c3c2b7', '#898781', '#55544f'
+BG, TRACK, RULE = '#06080b', '#171a20', '#1d2128'
+STATUS = {'good': '#0ca30c', 'warning': '#fab219', 'serious': '#ec835a', 'critical': '#d03b3b'}
+POOL_COLORS = {'bulk': '#3987e5', 'fast': '#d95926'}
+OTHER_POOL = '#199e70'
+
+SMALL = {
+    '0': ['111', '101', '101', '101', '111'], '1': ['010', '110', '010', '010', '111'], '2': ['111', '001', '111', '100', '111'],
+    '3': ['111', '001', '111', '001', '111'], '4': ['101', '101', '111', '001', '001'], '5': ['111', '100', '111', '001', '111'],
+    '6': ['111', '100', '111', '101', '111'], '7': ['111', '001', '001', '010', '010'], '8': ['111', '101', '111', '101', '111'],
+    '9': ['111', '101', '111', '001', '111'],
+    'A': ['010', '101', '111', '101', '101'], 'B': ['110', '101', '110', '101', '110'], 'C': ['011', '100', '100', '100', '011'],
+    'D': ['110', '101', '101', '101', '110'], 'E': ['111', '100', '110', '100', '111'], 'F': ['111', '100', '110', '100', '100'],
+    'G': ['011', '100', '101', '101', '011'], 'H': ['101', '101', '111', '101', '101'], 'I': ['111', '010', '010', '010', '111'],
+    'J': ['001', '001', '001', '101', '010'], 'K': ['101', '101', '110', '101', '101'], 'L': ['100', '100', '100', '100', '111'],
+    'M': ['10001', '11011', '10101', '10001', '10001'], 'N': ['1001', '1101', '1011', '1001', '1001'],
+    'O': ['010', '101', '101', '101', '010'], 'P': ['110', '101', '110', '100', '100'], 'Q': ['010', '101', '101', '110', '011'],
+    'R': ['110', '101', '110', '101', '101'], 'S': ['011', '100', '010', '001', '110'], 'T': ['111', '010', '010', '010', '010'],
+    'U': ['101', '101', '101', '101', '111'], 'V': ['101', '101', '101', '101', '010'], 'W': ['10001', '10001', '10101', '11011', '10001'],
+    'X': ['101', '101', '010', '101', '101'], 'Y': ['101', '101', '010', '010', '010'], 'Z': ['111', '001', '010', '100', '111'],
+    '.': ['0', '0', '0', '0', '1'], ',': ['0', '0', '0', '1', '1'], ':': ['0', '1', '0', '1', '0'], '!': ['1', '1', '1', '0', '1'],
+    '/': ['001', '001', '010', '100', '100'], '%': ['101', '001', '010', '100', '101'], '-': ['000', '000', '111', '000', '000'],
+    '+': ['000', '010', '111', '010', '000'], '°': ['111', '101', '111', '000', '000'],
+    '↓': ['010', '010', '010', '101', '010'], '↑': ['010', '101', '010', '010', '010'], ' ': ['00', '00', '00', '00', '00'],
+    '(': ['01', '10', '10', '10', '01'], ')': ['10', '01', '01', '01', '10'],
+}
+LARGE = {
+    '0': ['01110', '10001', '10011', '10101', '11001', '10001', '01110'], '1': ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
+    '2': ['01110', '10001', '00001', '00110', '01000', '10000', '11111'], '3': ['11110', '00001', '00001', '01110', '00001', '00001', '11110'],
+    '4': ['00010', '00110', '01010', '10010', '11111', '00010', '00010'], '5': ['11111', '10000', '11110', '00001', '00001', '10001', '01110'],
+    '6': ['00110', '01000', '10000', '11110', '10001', '10001', '01110'], '7': ['11111', '00001', '00010', '00100', '01000', '01000', '01000'],
+    '8': ['01110', '10001', '10001', '01110', '10001', '10001', '01110'], '9': ['01110', '10001', '10001', '01111', '00001', '00010', '01100'],
+    ':': ['0', '0', '1', '0', '1', '0', '0'], ' ': ['00', '00', '00', '00', '00', '00', '00'],
+    'W': ['10001', '10001', '10001', '10101', '10101', '11011', '10001'], 'T': ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
+    'R': ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
+}
+ICONS = {
+    'good': ['01110', '11111', '11111', '11111', '01110'],
+    'warning': ['00100', '00100', '01110', '01110', '11111'],
+    'serious': ['00100', '01110', '11111', '01110', '00100'],
+    'critical': ['11111', '11111', '11111', '11111', '11111'],
+}
+RANK = {'good': 0, 'warning': 1, 'serious': 2, 'critical': 3}
+DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+
+
+def rgb(hex_color):
+    return bytes(int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def mix(a, b, t):
+    return '#' + ''.join(f'{round(x + (y - x) * t):02x}' for x, y in zip(rgb(a), rgb(b)))
+
+
+class Canvas:
+    def __init__(self):
+        self.px = bytearray(rgb(BG) * (COLS * ROWS))
+
+    def rect(self, x, y, w, h, color):
+        x0, y0, x1, y1 = max(0, round(x)), max(0, round(y)), min(COLS, round(x + w)), min(ROWS, round(y + h))
+        if x1 <= x0 or y1 <= y0:
+            return
+        run = rgb(color) * (x1 - x0)
+        for yy in range(y0, y1):
+            o = (yy * COLS + x0) * 3
+            self.px[o:o + len(run)] = run
+
+    def text(self, s, x, y, color, font=SMALL):
+        cx = round(x)
+        for ch in s:
+            g = font.get(ch) or font.get(ch.upper())
+            if not g:
+                cx += 4
+                continue
+            for ry, row in enumerate(g):
+                for rx, bit in enumerate(row):
+                    if bit == '1':
+                        self.rect(cx + rx, y + ry, 1, 1, color)
+            cx += len(g[0]) + 1
+        return cx - round(x) - 1
+
+    def text_right(self, s, x_right, y, color, font=SMALL):
+        return self.text(s, x_right - text_width(s, font), y, color, font)
+
+    def icon(self, level, x, y, color):
+        for ry, row in enumerate(ICONS[level]):
+            for rx, bit in enumerate(row):
+                if bit == '1':
+                    self.rect(x + rx, y + ry, 1, 1, color)
+
+    # A bar of 2-pixel segments with a 1-pixel gap, like lcd.ts's segBar.
+    def seg_bar(self, x, y, w, h, frac, color):
+        pitch = 3
+        n = max(1, (w + 1) // pitch)
+        lit = max(1, round(min(1, frac) * n)) if frac > 0 else 0
+        off = (w - (n * pitch - 1)) // 2
+        for i in range(n):
+            self.rect(x + off + i * pitch, y, 2, h, color if i < lit else TRACK)
+
+    def meter(self, x, y, w, label, value, value_color, frac, bar_color, swatch=None):
+        lx = x
+        if swatch:
+            self.rect(x, y, 2, 5, swatch)
+            lx += 4
+        self.text(label, lx, y, MUTED)
+        self.text_right(value, x + w, y, value_color)
+        self.seg_bar(x, y + 8, w, 3, 0 if frac is None else frac, TRACK if frac is None else bar_color)
+
+
+def text_width(s, font=SMALL):
+    w = sum(len((font.get(ch) or font.get(ch.upper()) or ['000'])[0]) + 1 for ch in s)
+    return max(0, w - 1)
+
+
+def fit(s, max_w):
+    if text_width(s) <= max_w:
+        return s
+    while len(s) > 1 and text_width(s + '..') > max_w:
+        s = s[:-1]
+    return s.rstrip() + '..'
+
+
+def compact_rate(bps):
+    if bps < 1024:
+        return '0'
+    v, units, i = bps / 1024, 'KMG', 0
+    while v >= 1000 and i < len(units) - 1:
+        v /= 1024
+        i += 1
+    return (f'{round(v)}' if v >= 10 else f'{v:.1f}') + units[i]
+
+
+# ---------- local sensors ----------
+
+class Local:
+    def __init__(self):
+        self.cpu_prev = None
+        self.net_prev = None
+        self.pools = []
+        self.pools_at = 0
+        self.hwmon_cpu = next((f'/sys/class/hwmon/{h}/temp1_input' for h in sorted(os.listdir('/sys/class/hwmon'))
+                               if read_text(f'/sys/class/hwmon/{h}/name') == 'k10temp'), None)
+
+    def cpu_pct(self):
+        f = [int(v) for v in read_text('/proc/stat').split('\n', 1)[0].split()[1:9]]
+        idle, total = f[3] + f[4], sum(f)
+        prev, self.cpu_prev = self.cpu_prev, (idle, total)
+        if not prev or total <= prev[1]:
+            return None
+        return 100 * (1 - (idle - prev[0]) / (total - prev[1]))
+
+    def cpu_temp(self):
+        t = read_text(self.hwmon_cpu) if self.hwmon_cpu else ''
+        return int(t) / 1000 if t.isdigit() else None
+
+    def mem(self):
+        info = dict(line.split(':', 1) for line in read_text('/proc/meminfo').splitlines() if ':' in line)
+        total, avail = int(info['MemTotal'].split()[0]) * 1024, int(info['MemAvailable'].split()[0]) * 1024
+        return total - avail, total
+
+    # The fastest physical port with a link: (name, Mb/s, rx B/s, tx B/s).
+    def net(self):
+        best = None
+        for n in sorted(os.listdir('/sys/class/net')):
+            base = f'/sys/class/net/{n}'
+            if not os.path.exists(f'{base}/device') or read_text(f'{base}/carrier') != '1':
+                continue
+            speed = int(read_text(f'{base}/speed') or 0)
+            if best is None or speed > best[1]:
+                best = (n, speed)
+        if not best:
+            return None
+        base, now = f'/sys/class/net/{best[0]}/statistics', time.monotonic()
+        rx, tx = int(read_text(f'{base}/rx_bytes') or 0), int(read_text(f'{base}/tx_bytes') or 0)
+        prev, self.net_prev = self.net_prev, (best[0], now, rx, tx)
+        if not prev or prev[0] != best[0] or now <= prev[1]:
+            return best[0], best[1], 0, 0
+        return best[0], best[1], max(0, rx - prev[2]) / (now - prev[1]), max(0, tx - prev[3]) / (now - prev[1])
+
+    # zpool list every 30 s: [(name, size, alloc, health)].
+    def zpools(self):
+        if time.monotonic() - self.pools_at >= 30:
+            self.pools_at = time.monotonic()
+            try:
+                out = subprocess.run(['zpool', 'list', '-Hp', '-o', 'name,size,alloc,health'],
+                                     capture_output=True, text=True, timeout=10).stdout
+                self.pools = [(f[0], int(f[1]), int(f[2]), f[3]) for f in (line.split('\t') for line in out.splitlines()) if len(f) == 4]
+            except (OSError, subprocess.SubprocessError, ValueError):
+                self.pools = []
+        return self.pools
+
+
+def read_text(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return ''
+
+
+def fallback_frame(local, reason, now):
+    c = Canvas()
+    t = time.localtime(now)
+    M, right, gap = 8, COLS - 8, 12
+    col_w = (COLS - 2 * M - gap) // 2
+    x0, x1 = M, M + col_w + gap
+
+    pools = local.zpools()
+    alerts = [('critical', f'POOL {name.upper()} {health}') for name, _, _, health in pools if health != 'ONLINE']
+    cpu_t = local.cpu_temp()
+    if cpu_t is not None and cpu_t >= 90:
+        alerts.append(('warning', f'CPU {round(cpu_t)}°C'))
+    alerts.append(reason)
+    alerts.sort(key=lambda a: -RANK[a[0]])
+    worst = alerts[0][0]
+
+    # header: hostname and clock, the colon blinking with the seconds
+    head_y = 6
+    name_w = c.text('WTR', M, head_y, INK, LARGE)
+    c.icon(worst, M + name_w + 5, head_y + 1, STATUS[worst])
+    clock = time.strftime('%H:%M', t)
+    clock_w = text_width(clock, LARGE)
+    cx = right - clock_w
+    for ch in clock:
+        if ch == ':':
+            c.text(ch, cx, head_y, INK if t.tm_sec % 2 == 0 else DIM, LARGE)
+            cx += 2
+        else:
+            cx += c.text(ch, cx, head_y, INK, LARGE) + 1
+    c.text_right(f'{DAYS[t.tm_wday]} {t.tm_mday} {MONTHS[t.tm_mon - 1]}', right - clock_w - 7, head_y + 1, MUTED)
+    c.rect(M, head_y + 11, COLS - 2 * M, 1, RULE)
+
+    top, pitch = head_y + 17, 16
+    foot_y = ROWS - 15
+
+    # left: CPU and temperature, memory, network
+    pct = local.cpu_pct()
+    pct_text = '--%' if pct is None else f'{round(pct)}%'
+    c.meter(x0, top, col_w, 'CPU', pct_text, DIM if pct is None else INK, None if pct is None else pct / 100, INK2)
+    temp_color = DIM if cpu_t is None else STATUS['warning'] if cpu_t >= 90 else INK2
+    c.text_right('--°C' if cpu_t is None else f'{round(cpu_t)}°C', x0 + col_w - text_width(pct_text) - 6, top, temp_color)
+    used, total = local.mem()
+    c.meter(x0, top + pitch, col_w, 'MEM', f'{used / 1024 ** 3:.1f}/{total / 1024 ** 3:.1f}G', INK, used / total, INK2)
+    net_y = top + pitch * 2
+    c.text('NET', x0, net_y, MUTED)
+    nic = local.net()
+    if nic:
+        name, speed, rx, tx = nic
+        c.text(name.upper(), x0 + text_width('NET') + 5, net_y, INK2)
+        if speed:
+            c.text_right(f'{speed / 1000:g}G' if speed >= 1000 else f'{speed}M', x0 + col_w, net_y, MUTED)
+        c.text('↓', x0, net_y + 8, '#9fd8ff')
+        c.text(compact_rate(rx), x0 + 5, net_y + 8, INK if rx >= 1024 else MUTED)
+        c.text('↑', x0 + 54, net_y + 8, '#ffd59a')
+        c.text(compact_rate(tx), x0 + 59, net_y + 8, INK if tx >= 1024 else MUTED)
+    else:
+        c.text_right('NO LINK', x0 + col_w, net_y, DIM)
+
+    # right: pools
+    for i, (name, size, alloc, health) in enumerate(pools[:2]):
+        color = POOL_COLORS.get(name, OTHER_POOL)
+        frac = alloc / size if size else 0
+        c.meter(x1, top + i * pitch, col_w, name.upper(), f'{round(frac * 100)}%', INK if health == 'ONLINE' else STATUS['critical'], frac, color, color)
+    for i in range(len(pools), 2):
+        c.meter(x1, top + i * pitch, col_w, '--', '--', DIM, None, TRACK)
+    # bay activity needs onas's slot map; the load average stands in
+    c.text('LOAD', x1, net_y, MUTED)
+    c.text_right('  '.join(read_text('/proc/loadavg').split()[:3]), x1 + col_w, net_y, INK2)
+
+    # footer: the worst alert, with a count of the rest
+    level, msg = alerts[0]
+    color = STATUS[level]
+    band_y, band_h = foot_y + 1, 11
+    c.rect(M, band_y, COLS - 2 * M, band_h, mix(BG, color, 0.16))
+    c.rect(M, band_y, 2, band_h, color)
+    c.icon(level, M + 6, band_y + 3, color)
+    more = f'+{len(alerts) - 1}' if len(alerts) > 1 else ''
+    room = COLS - 2 * M - 15 - 4 - (text_width(more) + 6 if more else 0)
+    c.text(fit(msg, room), M + 15, band_y + 3, color)
+    if more:
+        c.text_right(more, right - 3, band_y + 3, INK2)
+    return bytes(c.px)
+
+
+# Shown when the service stops, so a frozen screen says so.
+def stopped_frame(now):
+    t = time.localtime(now)
+    c = Canvas()
+    c.text('WTR', 8, 6, DIM, LARGE)
+    c.rect(8, 17, COLS - 16, 1, RULE)
+    c.icon('warning', 8, 40, STATUS['warning'])
+    c.text('FRONT LCD SERVICE STOPPED', 17, 40, STATUS['warning'])
+    c.text(f'AT {t.tm_hour:02d}:{t.tm_min:02d} {DAYS[t.tm_wday]} {t.tm_mday} {MONTHS[t.tm_mon - 1]}', 17, 50, MUTED)
+    c.text('SYSTEMCTL STATUS WTR-LCD', 17, 66, DIM)
+    return bytes(c.px)
+
+
+# ---------- the loop ----------
+
+def fetch_frame():
+    """(frame, None) from onas, or (None, (level, reason)) when there is no usable frame."""
+    try:
+        with urllib.request.urlopen(FRAME_URL, timeout=2) as r:
+            # An onas without the endpoint answers with its web page.
+            if r.headers.get_content_type() != 'application/octet-stream':
+                return None, ('warning', 'ONAS SENT NO LCD FRAME (OLD BUILD?)')
+            data = r.read(FRAME_BYTES + 1)
+    except urllib.error.HTTPError as e:
+        return None, ('warning', f'ONAS SENT NO LCD FRAME (HTTP {e.code})')
+    except (OSError, ValueError):
+        return None, ('critical', 'ONAS NOT RESPONDING')
+    if len(data) != FRAME_BYTES:
+        return None, ('warning', f'BAD LCD FRAME FROM ONAS ({len(data)} BYTES)')
+    return data, None
+
+
+class Status:
+    def __init__(self, path):
+        self.path = path
+        self.values = {'started': int(time.time()), 'source': '', 'reason': '', 'fallback_since': '', 'acked': '', 'error': ''}
+
+    def write(self, **changes):
+        self.values.update(changes)
+        self.values['updated'] = int(time.time())
+        tmp = self.path + '.tmp'
+        try:
+            with open(tmp, 'w') as f:
+                f.writelines(f'{k}={v}\n' for k, v in self.values.items())
+            os.replace(tmp, self.path)
+        except OSError:
+            pass
+
+
+def log(msg):
+    print(msg, file=sys.stderr, flush=True)
+
+
+def run(once=False):
+    local = Local()
+    status = Status(STATUS_FILE)
+    panel = None
+    stopping = False
+    misses = 0
+    last_good = None
+    source = None
+
+    def stop(*_):
+        nonlocal stopping
+        stopping = True
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+
+    while not stopping:
+        now = time.time()
+        if panel is None:
+            try:
+                panel = Panel(DEVICE)
+                panel.command(CMD_ON)
+                log(f'panel ready on {os.path.realpath(DEVICE)}')
+                status.write(error='')
+            except (OSError, PanelError) as e:
+                if panel:
+                    panel.close()
+                panel = None
+                if status.values['error'] != str(e):
+                    log(f'panel: {e}; retrying every 10 s')
+                status.write(error=str(e))
+                if once:
+                    return 1
+                time.sleep(10)
+                continue
+
+        frame, problem = fetch_frame()
+        if frame:
+            misses, last_good = 0, frame
+            if source != 'onas':
+                log('showing the onas frame')
+                source = 'onas'
+                status.write(source='onas', reason='', fallback_since='')
+        else:
+            misses += 1
+            if misses >= FAILS_BEFORE_FALLBACK or last_good is None or once:
+                frame = fallback_frame(local, problem, now)
+                if source != 'fallback' or status.values['reason'] != problem[1]:
+                    log(f'fallback: {problem[1]}')
+                    since = status.values['fallback_since'] if source == 'fallback' else int(now)
+                    source = 'fallback'
+                    status.write(source='fallback', reason=problem[1], fallback_since=since)
+            else:
+                frame = last_good
+
+        try:
+            sent = panel.show(expand(frame))
+            status.write(acked=int(time.time()), error='')
+            if once:
+                log(f'sent {sent} chunks')
+                break
+        except (OSError, PanelError) as e:
+            log(f'panel: {e}; reopening')
+            status.write(error=str(e))
+            panel.close()
+            panel = None
+            if once:
+                return 1
+            time.sleep(2)
+            continue
+
+        # Next frame just after the next whole second, so the colon blinks evenly.
+        time.sleep(max(0.05, 1.02 - (time.time() % 1)))
+
+    if panel and not once:
+        try:
+            panel.show(expand(stopped_frame(time.time())))
+        except (OSError, PanelError):
+            pass
+    if panel:
+        panel.close()
+    return 0
+
+
+def main(argv):
+    if len(argv) > 1 and argv[1] in ('--on', '--off'):
+        panel = Panel(DEVICE)
+        panel.command(CMD_ON if argv[1] == '--on' else CMD_OFF)
+        panel.close()
+        return 0
+    if len(argv) > 1 and argv[1] != '--once':
+        print('usage: wtr-lcd [--once | --on | --off]', file=sys.stderr)
+        return 2
+    return run(once=len(argv) > 1)
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv))

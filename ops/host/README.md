@@ -30,3 +30,16 @@ Customizations on the host itself. `ops/bin/push host` installs `files/`; `ops/b
 - **Encryption key:** `/etc/pve/priv/storage/pbs-lxc.enc` (fingerprint `fd:39:3b:a3…`), the same key PVE uses for guest backups. Its paper key is in 1Password ("WTR PBS encryption key"). **Without it the B2 copy can't be restored.**
 - The uplink is 40 Mbps, so the PBS endpoint caps B2 uploads at 3 MiB/s (about 25 Mbps). The first upload of about 5.6 TB takes about 3 weeks; until it finishes, each nightly run waits for the previous one to end.
 - Status: `journalctl -u wtr-offsite-backup`, or the `b2-offsite` datastore in the PBS UI.
+
+## Front LCD shows live status (2026-10-22)
+
+**Why:** the 960 x 376 screen on the front of the case only ever showed the AOOSTAR logo. AOOSTAR's software for it is Windows-only, so nothing on Proxmox talked to it. Oren wanted it to read like a real control panel: the clock, CPU, memory, pools, network, bay activity and an alert line, matching the virtual screen on onas's Machine view.
+
+**What:** `wtr-lcd.service` runs `/usr/local/sbin/wtr-lcd`, which uses only the Python standard library (nothing installed). Once a second it fetches `http://192.168.2.189:3000/api/lcd/frame`, a 240 x 94 frame drawn by onas with the same `drawLcd()` as the Machine view (`client/src/lib/lcd.ts`). It draws each dot as a 3 x 3 pixel square and sends the panel only the parts that changed. A full redraw takes about 1.3 s.
+
+- **Fallback:** after three missed fetches it draws its own panel instead, from local sensors: clock, CPU % and Tctl, memory, pool fill, the fastest linked port's traffic and the load average. The footer gives the reason: ONAS NOT RESPONDING, or ONAS SENT NO LCD FRAME when the running onas build lacks the endpoint. So the screen never freezes on old numbers. When the service stops, it draws "FRONT LCD SERVICE STOPPED" with the time.
+- **The panel:** a Synwit MCU on USB (`0416:90a1`, cdc_acm), at `/dev/serial/by-id/usb-Synwit_USB_Virtual_COM-if00`, which answers each command with `A`. The protocol is from [zehnm/aoostar-rs](https://github.com/zehnm/aoostar-rs/blob/main/docs/lcd_protocol.md), reverse-engineered from the vendor's app; we use its exact messages and 47-byte chunks. That project's author warns that a malformed message could hang the panel firmware; a power cycle should recover it.
+- **Hardening:** runs unprivileged (`DynamicUser`, group `dialout`) with access only to the ttyACM devices and `/dev/zfs` (for `zpool list`).
+- **State:** `/run/wtr-lcd/status`: `source` (onas or fallback), `reason`, `fallback_since`, `acked` (the last frame the panel took) and `error`. `check.sh` reports these problems: the service isn't running, the panel has taken no frame for 2 minutes, or the screen has been on the fallback for 5 minutes.
+- **By hand:** `wtr-lcd --off` / `--on` switch the panel off and on (it keeps the last image); `wtr-lcd --once` draws one frame (stop the service first).
+- **To revert:** `systemctl disable --now wtr-lcd`, delete the unit and `/usr/local/sbin/wtr-lcd`, and `systemctl daemon-reload`. The panel keeps the "stopped" frame until it loses power; the logo is in its firmware and should come back after a power cycle.

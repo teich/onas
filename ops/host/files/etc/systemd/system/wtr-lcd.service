@@ -1,0 +1,44 @@
+# Managed in onas ops/host. Deployed with ops/bin/push host.
+[Unit]
+Description=WTR front LCD: live status from onas
+After=network-online.target zfs.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/wtr-lcd
+Restart=always
+RestartSec=5
+# A full redraw takes about 1.3 s; leave time for the "stopped" frame.
+TimeoutStopSec=20
+
+# Unprivileged: the panel's tty is group dialout; /dev/zfs (0666) is for `zpool list`.
+DynamicUser=yes
+SupplementaryGroups=dialout
+RuntimeDirectory=wtr-lcd
+RuntimeDirectoryMode=0755
+DevicePolicy=closed
+DeviceAllow=char-ttyACM rw
+DeviceAllow=/dev/zfs rw
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
