@@ -52,6 +52,10 @@ class PanelError(Exception):
     pass
 
 
+# What a panel that went away (unplugged, reset, re-enumerated) raises.
+PANEL_ERRORS = (OSError, termios.error, PanelError)
+
+
 class Panel:
     def __init__(self, device):
         self.fd = os.open(device, os.O_RDWR | os.O_NOCTTY)
@@ -496,7 +500,7 @@ def run(once=False):
                 panel.command(CMD_ON)
                 log(f'panel ready on {os.path.realpath(DEVICE)}')
                 status.write(error='')
-            except (OSError, PanelError) as e:
+            except PANEL_ERRORS as e:
                 if panel:
                     panel.close()
                 panel = None
@@ -533,7 +537,7 @@ def run(once=False):
             if once:
                 log(f'sent {sent} chunks')
                 break
-        except (OSError, PanelError) as e:
+        except PANEL_ERRORS as e:
             log(f'panel: {e}; reopening')
             status.write(error=str(e))
             panel.close()
@@ -549,7 +553,7 @@ def run(once=False):
     if panel and not once:
         try:
             panel.show(expand(stopped_frame(time.time())))
-        except (OSError, PanelError):
+        except PANEL_ERRORS:
             pass
     if panel:
         panel.close()

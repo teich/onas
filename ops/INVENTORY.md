@@ -12,6 +12,7 @@ Snapshot taken 2026-10-21 by Claude Code. Live state: `pct list`, `qm list`, `op
   - Monthly scrubs (last one 2026-10-11, no errors). All pools and disks healthy.
 - **Datasets** on `bulk`: media 6.9 T, photos 3.0 T (4 T quota), videos 753 G, backups 1.8 T, roms 25 G. Two are empty: timemachine (1 T quota) and home.
 - **Repos**: pve-no-subscription, Debian trixie, Tailscale. 0 pending host updates.
+- **Front LCD** (960 × 376, USB `0416:90a1`, `/dev/ttyACM0`): shows live status from onas through `wtr-lcd.service` (since 2026-10-22), see `ops/host`.
 
 ## Guests
 
