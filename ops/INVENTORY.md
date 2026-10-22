@@ -60,9 +60,9 @@ Removed 2026-10-21 09:05 by oren@pve (cruft, confirmed): 120 ollama, 121 n8n. Th
 - **Alert email** (fixed 2026-10-21): WTR's Postfix relays through Gmail (smtp.gmail.com:587, app password for oren@teich.net) and PBS relays through WTR. See `ops/host`. Before the fix, port 25 was blocked and alerts had been stuck since at least 2026-10-18.
 - `/bulk/backups` also holds AAC, Cadillac, m1-laptop and `DELETE-oren-m1-laptop` folders **?**
 
-## Patch state (apt upgradable, 2026-10-21)
+## Patch state
 
-immich 210 · uptimekuma 152 · PBS 137 · arr 88 · onas 85 · homepage 54 · cloudflared-teich 54 · evcc 54 · 2core 18 · gamm 8 · the rest 0. The PatchMon agent is missing on dash (105) and cloudflared-aac (109).
+Patching is done from PatchMon (http://192.168.2.122:3000): open a host and start a patch run, which runs apt on that guest through its agent. Before 2026-10-21 most guests had never been updated since install. On 2026-10-21 PatchMon patched every agent guest (about 700 packages, mostly Debian security fixes) after `pre-catchup` snapshots (`pre-patchmon-test` on 2core), and all services came back. Only patchmon (114) itself had updates left (3). The arr Docker images were updated by hand the same day (PatchMon only reports Docker updates; pull them on the arr guest). The PatchMon agent is missing on dash (105) and cloudflared-aac (109).
 
 ## Network
 
