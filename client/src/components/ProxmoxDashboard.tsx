@@ -25,7 +25,10 @@ function guestLinks(config: GuestConfigEntry, guest: Guest): Array<{ label: stri
 }
 
 function guestConfig(state: DashboardState, guest: Guest): GuestConfigEntry {
-  const byId = state.guestsConfig.guests?.[String(guest.vmid)] ?? {};
+  // Entries are keyed by VMID, which Proxmox reuses. An entry whose label names a different
+  // guest was written for a guest that's since been deleted, so it doesn't apply.
+  const entry = state.guestsConfig.guests?.[String(guest.vmid)] ?? {};
+  const byId = !entry.label || entry.label === guest.name ? entry : {};
   const defaults = state.guestsConfig.defaults?.[guest.type] ?? {};
   return { ...defaults, ...byId };
 }
@@ -148,7 +151,7 @@ function GuestsPanel({ state, busyGuest, onAction, onDelete }: {
     const rate = guestRate(guest);
     if (key === 'type') return guest.type;
     if (key === 'vmid') return guest.vmid;
-    if (key === 'name') return guestConfig(state, guest).label || guest.name;
+    if (key === 'name') return guest.name;
     if (key === 'status') return statusRank[guest.status] ?? statusRank.unknown;
     if (key === 'uptime') return guest.uptime ?? 0;
     if (key === 'cpu') return guest.cpu ?? 0;
@@ -208,10 +211,10 @@ function GuestsPanel({ state, busyGuest, onAction, onDelete }: {
                 rel="noreferrer"
                 onClick={event => event.stopPropagation()}
               >
-                {cfg.label || guest.name}
+                {guest.name}
               </a>
             ) : (
-              <span className="guest-name">{cfg.label || guest.name}</span>
+              <span className="guest-name">{guest.name}</span>
             )}
             <span className="service-links" onClick={event => event.stopPropagation()}>
               {links.slice(0, 6).map(link => (

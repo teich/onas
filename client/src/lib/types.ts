@@ -104,7 +104,7 @@ export interface HostHealth {
 }
 
 export interface GuestConfigEntry {
-  label?: string;
+  label?: string; // the guest name this entry was written for; it's ignored if the VMID now has another name
   open?: string;
   dash?: string;
   links?: Array<{ label: string; url: string }>;
