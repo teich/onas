@@ -1,153 +1,53 @@
-import type { Share, HostHealth, SmartDisk, DashboardState, GuestsConfig } from './types';
+import type { DashboardState, Share } from './types';
 
-export async function fetchZfs() {
-  const res = await fetch('/api/zfs');
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+async function send<T>(url: string, init: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
   return res.json();
 }
 
-export async function fetchState(): Promise<DashboardState> {
-  const res = await fetch('/api/state');
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+function json(method: string, body: unknown): RequestInit {
+  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
 
-export async function fetchIostat() {
-  const res = await fetch('/api/iostat');
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
-export async function fetchDatasetProps(name: string) {
-  const res = await fetch(`/api/dataset/${encodeURIComponent(name)}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
-export async function createSnapshot(dataset: string, snapname: string) {
-  const res = await fetch('/api/snapshot', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dataset, snapname }),
+// Live state over Server-Sent Events. The server sends the full state on connect and again
+// whenever a collector finishes; EventSource reconnects on its own after a drop.
+export function subscribeState(
+  onState: (state: DashboardState) => void,
+  onConnection: (connected: boolean) => void,
+): () => void {
+  const source = new EventSource('/api/events');
+  source.addEventListener('state', event => {
+    onConnection(true);
+    onState(JSON.parse((event as MessageEvent).data));
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  source.onerror = () => onConnection(false);
+  return () => source.close();
 }
 
-export async function fetchGuests() {
-  const res = await fetch('/api/guests');
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+export function putSmb(shares: Share[]): Promise<{ shares: Share[] }> {
+  return send('/api/smb', json('PUT', { shares }));
 }
 
-export async function fetchGuestsConfig(): Promise<GuestsConfig> {
-  const res = await fetch('/api/config/guests');
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+export function createUser(username: string, password: string) {
+  return send('/api/users', json('POST', { username, password }));
 }
 
-export async function fetchSmb() {
-  const res = await fetch('/api/smb');
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+export function deleteUser(username: string) {
+  return send(`/api/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
 }
 
-export async function putSmb(shares: Share[]) {
-  const res = await fetch('/api/smb', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ shares }),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${res.status}`);
-  }
-  return res.json();
+export function guestAction(vmid: number, action: string): Promise<{ ok: boolean; output?: string }> {
+  return send(`/api/guests/${vmid}/${action}`, { method: 'POST' });
 }
 
-export async function fetchUsers() {
-  const res = await fetch('/api/users');
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+export function deleteGuest(vmid: number, confirm: string): Promise<{ ok: boolean }> {
+  return send(`/api/guests/${vmid}?confirm=${encodeURIComponent(confirm)}`, { method: 'DELETE' });
 }
 
-export async function createUser(username: string, password: string) {
-  const res = await fetch('/api/users', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${res.status}`);
-  }
-  return res.json();
-}
-
-export async function deleteUser(username: string) {
-  const res = await fetch(`/api/users/${encodeURIComponent(username)}`, {
-    method: 'DELETE',
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${res.status}`);
-  }
-  return res.json();
-}
-
-export async function guestAction(vmid: number, type: 'lxc' | 'vm', action: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`/api/guests/${vmid}/action`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type, action }),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${res.status}`);
-  }
-  return res.json();
-}
-
-export async function guestActionByRoute(vmid: number, action: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`/api/guests/${vmid}/${action}`, { method: 'POST' });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${res.status}`);
-  }
-  return res.json();
-}
-
-export async function deleteGuest(vmid: number, confirm: string): Promise<{ ok: boolean }> {
-  const res = await fetch(`/api/guests/${vmid}?confirm=${encodeURIComponent(confirm)}`, { method: 'DELETE' });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${res.status}`);
-  }
-  return res.json();
-}
-
-export async function fetchHost(): Promise<HostHealth> {
-  const res = await fetch('/api/host');
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
-
-export async function fetchSmart(): Promise<{ disks: SmartDisk[]; timestamp: string }> {
-  const res = await fetch('/api/smart');
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
-export async function resetUserPassword(username: string, password: string) {
-  const res = await fetch(`/api/users/${encodeURIComponent(username)}/password`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password }),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${res.status}`);
-  }
-  return res.json();
+export function createSnapshot(dataset: string, name: string) {
+  return send('/api/snapshots', json('POST', { datasets: [dataset], name }));
 }

@@ -37,7 +37,7 @@ IP "dhcp → x" means the address isn't pinned (it may be a DHCP reservation, **
 | 115 | 2core | 192.168.2.6 | In development: alternative UI for the property's Tucor irrigation controllers. Docker `/opt/2core` (:8787 on localhost; reached over Tailscale) | Code in `~/src` and GitHub |
 | 116 | personal-windows (VM) | — | Windows 11, **stopped** | EFI disk lacks the 2023 Secure Boot certs (nightly backup warning) |
 | 117 | gamm | dhcp → .218 | **AAC** Google Ads MCP gateway, `gamm.grouse-crested.ts.net` | Code `~/src/aac/gamm` |
-| 119 | onas | dhcp → .189 | Samba shares (media, backups, photos, videos, roms) + this dashboard (:3000) | |
+| 119 | onas | dhcp → .189 | Samba shares (media, backups, photos, videos, roms) + this dashboard (:3000) | Customized, see `ops/guests/119-onas` (Node 24 from NodeSource, `onas.service`, 2026-10-22) |
 | 301 | acc-external-apps (VM) | VLAN5 | **stopped**. Second try at 113 (2025-11-12): Docker + virtiofs mount of `/fast/apps`; only `hello-world` was ever run | Cruft. Name has an "acc" typo |
 
 Removed 2026-10-21 09:05 by oren@pve (cruft, confirmed): 120 ollama, 121 n8n. The 2026-10-20 PBS backups of both still exist.

@@ -728,8 +728,6 @@ body::before {
 }
 
 .dashboard-shell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
   min-height: calc(100vh - 34px);
 }
 
@@ -1183,57 +1181,22 @@ body::before {
   .share-form { grid-template-columns: 1fr; }
 }
 
-.charts-rail {
-  position: sticky;
-  top: 34px;
-  height: calc(100vh - 34px);
-  overflow-y: auto;
-  border-left: 1px solid var(--border-hi);
-  background: #0a0f15;
-}
-.rail-block {
-  padding: 8px 10px 10px;
+.activity-panel details {
   border-bottom: 1px solid var(--border);
+  padding: 4px 10px;
 }
-.rail-title {
-  color: var(--text2);
-  font-family: var(--sans);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  margin-bottom: 6px;
-}
-.spark {
-  display: block;
-  width: 100%;
-  height: 78px;
-  background: var(--bg1);
-  border: 1px solid var(--border);
-}
-.spark path {
-  fill: none;
-  stroke: var(--cyan);
-  stroke-width: 1.8;
-  vector-effect: non-scaling-stroke;
-}
-.spark.net path { stroke: var(--green); }
-
-.activity-block details {
-  border-bottom: 1px solid var(--border);
-  padding: 5px 0;
-}
-.activity-block details.failed summary { color: var(--red); }
-.activity-block summary {
+.activity-panel details:last-child { border-bottom: none; }
+.activity-panel details.failed summary { color: var(--red); }
+.activity-panel summary {
   display: grid;
-  grid-template-columns: 58px 64px 1fr;
-  gap: 6px;
+  grid-template-columns: 150px 150px minmax(0, 1fr);
+  gap: 8px;
   color: var(--text1);
   cursor: pointer;
   list-style: none;
 }
-.activity-block summary::-webkit-details-marker { display: none; }
-.activity-block pre {
+.activity-panel summary::-webkit-details-marker { display: none; }
+.activity-panel pre {
   margin-top: 6px;
   padding: 6px;
   overflow-x: auto;
@@ -1242,19 +1205,38 @@ body::before {
   border: 1px solid var(--border);
   white-space: pre-wrap;
 }
-.empty-log { color: var(--text2); padding: 8px 0; }
+.empty-log { color: var(--text2); padding: 8px 10px; }
 
-@media (max-width: 1599px) {
-  .dashboard-shell { grid-template-columns: 1fr; }
-  .charts-rail {
-    position: static;
-    height: auto;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(180px, 1fr));
-    border-left: none;
-    border-top: 1px solid var(--border-hi);
-  }
-  .activity-block { grid-column: 1 / -1; }
+/* Collector freshness: section titles show age, and turn amber when a collector is failing. */
+.dense-title .age { font-weight: 400; letter-spacing: 0.04em; text-transform: none; }
+.dense-title .age.failing { color: var(--amber); }
+.collector-warning {
+  color: var(--amber);
+  background: var(--amber-dim);
+  border-bottom: 1px solid var(--amber-glow);
+  padding: 5px 10px;
+}
+
+/* Placeholder rows shown until the first state arrives, sized like real rows so nothing jumps. */
+.skeleton-row {
+  height: 28px;
+  margin: 0 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+}
+.skeleton-row span {
+  display: block;
+  height: 8px;
+  width: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--bg2) 0%, var(--bg3) 50%, var(--bg2) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
 }
 
 @media (max-width: 1180px) {
@@ -1264,51 +1246,3 @@ body::before {
   .lower-grid { grid-template-columns: 1fr; }
   .lower-grid .dense-section:first-child { border-right: none; }
 }
-
-/* ---- GUEST CONTROLS ---- */
-.guest-ctrl-strip { display: flex; gap: 4px; flex-shrink: 0; }
-.guest-ctrl-btn {
-  font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase;
-  padding: 3px 8px; border-radius: 3px; cursor: pointer; border: 1px solid var(--border);
-  background: var(--bg2); color: var(--text2); transition: all 0.12s; line-height: 1.6;
-  white-space: nowrap;
-}
-.guest-ctrl-btn:hover:not(:disabled) { border-color: var(--border-hi); color: var(--text1); background: var(--bg3); }
-.guest-ctrl-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-.guest-ctrl-btn.start:hover:not(:disabled) { color: var(--green); border-color: rgba(16,185,129,0.4); background: var(--green-dim); }
-.guest-ctrl-btn.stop:hover:not(:disabled) { color: var(--red); border-color: rgba(239,68,68,0.35); background: var(--red-dim); }
-.guest-ctrl-btn.shutdown:hover:not(:disabled) { color: var(--amber); border-color: var(--amber-glow); background: var(--amber-dim); }
-.guest-ctrl-btn.reboot:hover:not(:disabled) { color: var(--text1); border-color: var(--border-hi); }
-.guest-ctrl-confirm { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.guest-ctrl-confirm-label { font-family: var(--mono); font-size: 9px; color: var(--amber); letter-spacing: 0.04em; }
-.guest-ctrl-error { font-family: var(--mono); font-size: 9px; color: var(--red); margin-top: 4px; max-width: 240px; }
-
-/* ---- HOST HEALTH ---- */
-.host-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
-.host-load-grid { display: flex; gap: 12px; }
-.host-load-box { flex: 1; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; }
-
-/* ---- SMART TABLE ---- */
-.smart-table-head {
-  display: grid;
-  grid-template-columns: 72px 1fr 52px 56px 80px 70px 90px;
-  background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 16px;
-}
-.smart-table-row {
-  display: grid;
-  grid-template-columns: 72px 1fr 52px 56px 80px 70px 90px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border);
-  align-items: center;
-  min-height: 40px;
-  transition: background 0.1s;
-}
-.smart-table-row:last-child { border-bottom: none; }
-.smart-table-row:hover { background: var(--bg2); }
-.smart-health-passed { font-family: var(--mono); font-size: 10px; color: var(--green); background: var(--green-dim); padding: 2px 7px; border-radius: 3px; }
-.smart-health-failed { font-family: var(--mono); font-size: 10px; color: var(--red); background: var(--red-dim); padding: 2px 7px; border-radius: 3px; }
-.smart-temp-ok { font-family: var(--mono); font-size: 12px; color: var(--green); }
-.smart-temp-warn { font-family: var(--mono); font-size: 12px; color: var(--amber); }
-.smart-temp-hot { font-family: var(--mono); font-size: 12px; color: var(--red); }
-.smart-realloc-ok { font-family: var(--mono); font-size: 12px; color: var(--text2); }
-.smart-realloc-bad { font-family: var(--mono); font-size: 12px; color: var(--red); font-weight: 600; }

@@ -1,36 +1,38 @@
+// Vdev tree as returned by the Proxmox API (/nodes/{node}/disks/zfs/{pool}).
 export interface Vdev {
   name: string;
   state: string;
   read: number;
   write: number;
   cksum: number;
-  children: Vdev[];
-  _indent?: number;
+  leaf: number;
+  msg?: string;
+  children?: Vdev[];
 }
 
 export interface Pool {
   name: string;
-  size: string;
-  alloc: string;
-  free: string;
-  frag: string;
+  size: number;
+  alloc: number;
+  free: number;
+  frag: number;
   cap: number;
-  dedup: string;
+  dedup: number;
   health: string;
-  scan?: string;
-  errors?: string;
-  vdevs?: Vdev[];
-  configRaw?: string;
+  scan: string;
+  errors: string;
+  status: string;
+  vdevs: Vdev[];
 }
 
 export interface Dataset {
   name: string;
-  used: string;
-  avail: string;
-  refer: string;
+  used: number;
+  avail: number;
+  refer: number;
   mountpoint: string;
   type: string;
-  volsize: string | null;
+  volsize: number | null;
 }
 
 export interface Snapshot {
@@ -47,18 +49,31 @@ export interface Guest {
   name: string;
   status: 'running' | 'stopped' | 'paused' | 'booting' | 'stopping' | 'error' | 'unknown' | string;
   type: 'lxc' | 'vm';
+  tags?: string;
+  lock?: string;
   uptime?: number;
   cpu?: number;
+  maxcpu?: number;
   mem?: number;
   maxmem?: number;
   disk?: number;
   maxdisk?: number;
-  netin?: number;
-  netout?: number;
-  diskread?: number;
-  diskwrite?: number;
-  lock?: string;
-  ip?: string;
+  netinRate?: number | null;
+  netoutRate?: number | null;
+}
+
+export interface Disk {
+  devpath: string;
+  model: string;
+  serial: string;
+  type: string;
+  size: number;
+  used: string;
+  health: string;
+  wearout: number | null;
+  tempC: number | null;
+  powerOnHours: number | null;
+  reallocated: number | null;
 }
 
 export interface Share {
@@ -74,31 +89,18 @@ export interface Share {
 export interface SmbUser {
   username: string;
   fullName: string;
-  flags: string;
 }
 
 export interface HostHealth {
   hostname?: string;
   kernel?: string;
+  pveVersion?: string;
   cpu: { pct: number; cores: number };
-  mem: { totalBytes: number; usedBytes: number; availBytes: number };
+  mem: { totalBytes: number; usedBytes: number };
   swap: { totalBytes: number; usedBytes: number };
   load: { load1: number; load5: number; load15: number };
   uptimeSeconds: number;
   timestamp: string;
-}
-
-export interface SmartDisk {
-  device: string;
-  model: string;
-  serial: string;
-  type: 'ata' | 'nvme' | 'unknown';
-  tempC: number | null;
-  healthPassed: boolean | null;
-  smartStatus: string;
-  powerOnHours: number | null;
-  reallocatedSectors: number | null;
-  error?: string;
 }
 
 export interface GuestConfigEntry {
@@ -117,24 +119,33 @@ export interface GuestsConfig {
 }
 
 export interface ActivityEntry {
-  id: string;
+  id: number;
   timestamp: string;
+  actor: string;
   action: string;
   target: string;
-  exitCode: number;
-  stdout: string;
-  stderr: string;
+  ok: boolean;
+  exitCode: number | null;
+  output: string;
 }
 
 export interface UpdatesInfo {
   count: number;
-  patches?: number;
-  updates?: number;
-  upgrades?: number;
-  packages: string[];
-  raw: string;
+  patches: number;
+  updates: number;
+  upgrades: number;
+  packages: Array<{ package: string; oldVersion: string; version: string; kind: string }>;
   checkedAt: string | null;
-  stale?: boolean;
+}
+
+export interface CollectorStatus {
+  intervalMs: number;
+  lastRun: string | null;
+  lastOk: string | null;
+  ok: boolean | null;
+  error: string | null;
+  durationMs: number | null;
+  via: string | null;
 }
 
 export interface DashboardState {
@@ -143,9 +154,12 @@ export interface DashboardState {
   pools: Pool[];
   datasets: Dataset[];
   snapshots: Snapshot[];
+  disks: Disk[];
   shares: Share[];
+  smbUsers: SmbUser[];
   updates: UpdatesInfo;
   activity: ActivityEntry[];
   guestsConfig: GuestsConfig;
+  collectors: Record<string, CollectorStatus>;
   timestamp: string;
 }

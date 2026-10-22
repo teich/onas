@@ -24,6 +24,10 @@ DNS points `*.teich.network` at **192.168.2.5 = LXC 101 `caddy`**, which termina
 
 If a site gives "connection refused", check Caddy before the backend. A 502 means Caddy is fine and the backend is down.
 
+## The onas app
+
+The dashboard in this repo runs on LXC 119 as `onas.service` (`/opt/onas`, state in `/var/lib/onas/onas.db`). Deploy with `ops/guests/119-onas/deploy`. When it looks wrong, `curl http://192.168.2.189:3000/api/health` names any collector that's failing and why. See [README.md](README.md).
+
 ## Customizations live in `ops/`
 
 Anything we change on a guest beyond its stock install goes in `ops/guests/<vmid>-<name>/` (files, a README with the why, and a `check.sh`), then gets deployed with `ops/bin/push`. Read [ops/README.md](ops/README.md) before changing anything on a guest. When diagnosing, run `ops/bin/check` early: it reports any customization that has drifted or stopped working. If you fix something by hand, put the fix into `ops/` before you finish.

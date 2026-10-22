@@ -1,0 +1,28 @@
+#!/bin/sh
+# One-time: create the Proxmox API user and tokens onas uses, and store the secrets on LXC 119
+# (/etc/onas/pve.env, mode 600). Run by Oren; until this exists onas falls back to pvesh over SSH.
+#   collector: PVEAuditor on /           (all reads)
+#   actions:   PVEVMAdmin on /vms        (start/stop/reboot/snapshot/delete guests)
+# Rerunning replaces both tokens.
+set -eu
+HOST=${WTR_HOST:-root@192.168.2.2}
+ssh "$HOST" sh -s <<'ON_WTR'
+set -eu
+pveum user list --output-format json | grep -q '"onas@pve"' || pveum user add onas@pve --comment "onas dashboard; see onas ops/guests/119-onas"
+pveum acl modify / --users onas@pve --roles PVEAuditor
+pveum acl modify /vms --users onas@pve --roles PVEVMAdmin
+token() {
+	pveum user token remove onas@pve "$1" >/dev/null 2>&1 || true
+	pveum user token add onas@pve "$1" --privsep 1 --comment "$2" --output-format json \
+		| python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+}
+collector=$(token collector "onas read-only collectors")
+actions=$(token actions "onas guest actions")
+pveum acl modify / --tokens 'onas@pve!collector' --roles PVEAuditor
+pveum acl modify / --tokens 'onas@pve!actions' --roles PVEAuditor
+pveum acl modify /vms --tokens 'onas@pve!actions' --roles PVEVMAdmin
+printf 'PVE_COLLECTOR_TOKEN=onas@pve!collector=%s\nPVE_ACTIONS_TOKEN=onas@pve!actions=%s\n' "$collector" "$actions" \
+	| pct exec 119 -- sh -c 'umask 077; mkdir -p /etc/onas; cat > /etc/onas/pve.env'
+pct exec 119 -- systemctl restart onas
+echo "tokens stored in LXC 119:/etc/onas/pve.env; onas restarted"
+ON_WTR

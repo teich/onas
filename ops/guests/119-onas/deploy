@@ -1,0 +1,55 @@
+#!/bin/sh
+# Build onas from this checkout and install it on LXC 119. Safe to rerun: it also installs
+# Node 24, the systemd unit and /etc/onas config if they're missing.
+# Usage: ops/guests/119-onas/deploy
+set -eu
+
+HOST=${WTR_HOST:-root@192.168.2.2}
+REPO=$(cd "$(dirname "$0")/../../.." && pwd)
+GUEST="pct exec 119 --"
+cd "$REPO"
+
+version=$(git describe --always --dirty)
+echo "building client ($version)"
+(cd client && npm ci --no-audit --no-fund --silent && npm run build --silent)
+printf '%s\n' "$version" > public/VERSION
+
+echo "installing guest files and Node 24"
+"$REPO/ops/bin/push" 119-onas
+ssh "$HOST" "$GUEST sh -s" <<'GUEST_SETUP'
+set -eu
+export LC_ALL=C.UTF-8 DEBIAN_FRONTEND=noninteractive
+if [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -lt 24 ]; then
+	# Debian's npm conflicts with NodeSource's nodejs, which bundles its own npm.
+	apt-get remove -y -qq npm >/dev/null 2>&1 || true
+	apt-get update -qq
+	apt-get install -y -qq nodejs >/dev/null
+fi
+mkdir -p /etc/onas
+[ -f /etc/onas/guests.json ] || [ ! -f /etc/pve-dash/guests.json ] || cp /etc/pve-dash/guests.json /etc/onas/guests.json
+GUEST_SETUP
+# PVE's root CA, so the API client can verify WTR's certificate (public, not a secret).
+ssh "$HOST" "cat /etc/pve/pve-root-ca.pem" | ssh "$HOST" "$GUEST sh -c 'cat > /etc/onas/pve-ca.pem'"
+
+echo "copying app"
+{ git ls-files --cached --others --exclude-standard server package.json package-lock.json; find public -type f; } \
+	| COPYFILE_DISABLE=1 tar --uid 0 --gid 0 --no-mac-metadata --no-xattrs -cf - -T - \
+	| ssh "$HOST" "$GUEST sh -c 'rm -rf /opt/onas.new && mkdir -p /opt/onas.new && tar -xf - -C /opt/onas.new'"
+
+echo "installing dependencies and restarting"
+ssh "$HOST" "$GUEST sh -s" <<'GUEST_SWAP'
+set -eu
+cd /opt/onas.new
+npm ci --omit=dev --no-audit --no-fund --silent
+rm -rf /opt/onas.old
+[ -d /opt/onas ] && mv /opt/onas /opt/onas.old
+mv /opt/onas.new /opt/onas
+# The pre-2026-10-22 dashboard ran from /opt/nas-dashboard as nas-dashboard.service.
+if systemctl is-enabled -q nas-dashboard 2>/dev/null; then systemctl disable --now nas-dashboard; fi
+systemctl daemon-reload
+systemctl enable -q onas
+systemctl restart onas
+GUEST_SWAP
+
+sleep 3
+"$REPO/ops/bin/check" 119-onas && echo "deployed $version"

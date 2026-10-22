@@ -1,35 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createSnapshot, deleteUser, deleteGuest, fetchState, fetchUsers, guestActionByRoute, putSmb, createUser } from '../lib/api';
-import type { ActivityEntry, DashboardState, Dataset, Guest, GuestConfigEntry, Share, SmbUser, Snapshot } from '../lib/types';
-import { defaultSnapName, fmtBytes, parseSize, timeAgo } from '../lib/helpers';
-
-interface RatePoint {
-  at: number;
-  cpu: number;
-  ram: number;
-  iowait: number;
-  netIn: number;
-  netOut: number;
-}
-
-interface GuestRate {
-  at: number;
-  netin: number;
-  netout: number;
-}
-
-const EMPTY_STATE: DashboardState = {
-  host: null,
-  guests: [],
-  pools: [],
-  datasets: [],
-  snapshots: [],
-  shares: [],
-  updates: { count: 0, packages: [], raw: '', checkedAt: null },
-  activity: [],
-  guestsConfig: {},
-  timestamp: new Date(0).toISOString(),
-};
+import { useEffect, useState } from 'react';
+import { createSnapshot, createUser, deleteGuest, deleteUser, guestAction, putSmb, subscribeState } from '../lib/api';
+import type { ActivityEntry, CollectorStatus, DashboardState, Dataset, Guest, GuestConfigEntry, Share, SmbUser, Snapshot } from '../lib/types';
+import { defaultSnapName, fmtBytes, timeAgo } from '../lib/helpers';
 
 function fmtUptime(seconds?: number): string {
   if (!seconds) return '';
@@ -72,7 +44,7 @@ function datasetShares(dataset: Dataset, shares: Share[]): Share[] {
 function diskTotal(datasets: Dataset[], guest: Guest): number {
   const fromStats = guest.maxdisk || guest.disk || 0;
   if (fromStats > 0) return fromStats;
-  return guestDiskDatasets(datasets, guest.vmid).reduce((sum, ds) => sum + parseSize(ds.volsize || ds.used), 0);
+  return guestDiskDatasets(datasets, guest.vmid).reduce((sum, ds) => sum + (ds.volsize ?? ds.used ?? 0), 0);
 }
 
 function pct(value?: number): string {
@@ -88,41 +60,35 @@ function MiniBar({ value, warnAt = 85 }: { value: number; warnAt?: number }) {
   );
 }
 
-function Sparkline({ points, pick, className }: {
-  points: RatePoint[];
-  pick: (point: RatePoint) => number;
-  className?: string;
-}) {
-  const values = points.map(pick);
-  const max = Math.max(1, ...values);
-  const d = values.map((v, i) => {
-    const x = values.length <= 1 ? 0 : (i / (values.length - 1)) * 100;
-    const y = 34 - (v / max) * 30;
-    return `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`;
-  }).join(' ');
+// "40s ago" for a section, amber with the error when its collector's last run failed.
+function SectionAge({ collector }: { collector?: CollectorStatus }) {
+  if (!collector?.lastOk) return <span className={`age ${collector?.error ? 'failing' : ''}`} title={collector?.error ?? ''}>{collector?.error ? 'failing' : 'waiting'}</span>;
   return (
-    <svg className={className ?? 'spark'} viewBox="0 0 100 36" preserveAspectRatio="none">
-      <path d={d || 'M0,34'} />
-    </svg>
+    <span className={`age ${collector.ok === false ? 'failing' : ''}`} title={collector.error ?? `via ${collector.via}`}>
+      {collector.ok === false ? 'failing · ' : ''}{timeAgo(collector.lastOk)}
+    </span>
   );
 }
 
-function HostBar({ state, stale }: {
+function SkeletonRows({ rows }: { rows: number }) {
+  return <>{Array.from({ length: rows }, (_, i) => <div className="skeleton-row" key={i}><span /></div>)}</>;
+}
+
+function HostBar({ state, connected }: {
   state: DashboardState;
-  stale: boolean;
+  connected: boolean;
 }) {
   const host = state.host;
   const ramPct = host ? (host.mem.usedBytes / Math.max(1, host.mem.totalBytes)) * 100 : 0;
-  const patches = state.updates.patches ?? 0;
-  const updates = state.updates.updates ?? state.updates.count;
-  const upgrades = state.updates.upgrades ?? 0;
+  const { patches, updates, upgrades } = state.updates;
+  const packageList = state.updates.packages.map(p => `${p.package} ${p.oldVersion} → ${p.version}`).join('\n');
   const vmOpen = state.guestsConfig.defaults?.vm?.open;
   const proxmoxUrl = vmOpen?.startsWith('http') ? vmOpen.split('?')[0] : 'https://wtr.giraffe-gamma.ts.net';
   return (
     <div className="host-strip">
       <div className="host-strip-main">
-        <a className={`status-pill ${host ? 'running' : 'error'}`} href={proxmoxUrl} target="_blank" rel="noreferrer">
-          {host ? 'online' : 'disconnected'}
+        <a className={`status-pill ${host && connected ? 'running' : 'error'}`} href={proxmoxUrl} target="_blank" rel="noreferrer">
+          {!connected ? 'disconnected' : host ? 'online' : 'no data'}
         </a>
         <strong>{host?.hostname || 'proxmox'}</strong>
         <span><span className="muted">CPU</span> {pct(host?.cpu.pct)} <MiniBar value={host?.cpu.pct ?? 0} /></span>
@@ -131,8 +97,11 @@ function HostBar({ state, stale }: {
         <span><span className="muted">UP</span> {fmtUptime(host?.uptimeSeconds) || '-'}</span>
         <span title={host?.kernel ?? ''}><span className="muted">KERNEL</span> {host?.kernel ? 'hover' : '-'}</span>
       </div>
-      <span className={`updates-button passive ${state.updates.count > 0 ? 'warn' : ''}`} title={state.updates.raw || 'No package update output cached'}>
-        {state.updates.count > 0 ? `${patches} patches · ${updates} updates · ${upgrades} upgrades` : 'apt current'} {stale ? ' stale' : ''}
+      <span
+        className={`updates-button passive ${state.updates.count > 0 ? 'warn' : ''}`}
+        title={packageList || (state.updates.checkedAt ? `Checked ${timeAgo(state.updates.checkedAt)}` : 'Not checked yet')}
+      >
+        {state.updates.count > 0 ? `${patches} patches · ${updates} updates · ${upgrades} upgrades` : 'apt current'}
       </span>
     </div>
   );
@@ -162,9 +131,12 @@ function GuestActions({ guest, config, busy, onAction, onDelete }: {
   );
 }
 
-function GuestsPanel({ state, guestRates, busyGuest, onAction, onDelete }: {
+function guestRate(guest: Guest) {
+  return { inRate: guest.netinRate ?? 0, outRate: guest.netoutRate ?? 0 };
+}
+
+function GuestsPanel({ state, busyGuest, onAction, onDelete }: {
   state: DashboardState;
-  guestRates: Record<number, { inRate: number; outRate: number }>;
   busyGuest: number | null;
   onAction: (guest: Guest, action: string) => void;
   onDelete: (guest: Guest) => void;
@@ -173,7 +145,7 @@ function GuestsPanel({ state, guestRates, busyGuest, onAction, onDelete }: {
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'status', dir: 'asc' });
   const statusRank: Record<string, number> = { running: 0, booting: 1, paused: 2, stopping: 3, stopped: 4, error: 5, unknown: 6 };
   const sortValue = (guest: Guest, key: SortKey): string | number => {
-    const rate = guestRates[guest.vmid] ?? { inRate: 0, outRate: 0 };
+    const rate = guestRate(guest);
     if (key === 'type') return guest.type;
     if (key === 'vmid') return guest.vmid;
     if (key === 'name') return guestConfig(state, guest).label || guest.name;
@@ -198,7 +170,7 @@ function GuestsPanel({ state, guestRates, busyGuest, onAction, onDelete }: {
   });
   return (
     <section className="dense-section guests-panel">
-      <div className="dense-title"><span>Guests</span><span>{rows.length} guests</span></div>
+      <div className="dense-title"><span>Guests</span><span>{rows.length} guests · <SectionAge collector={state.collectors.pve} /></span></div>
       <div className="guest-grid guest-head">
         <button onClick={() => setSortKey('type')}>{sortLabel('type', 'Type')}</button>
         <button onClick={() => setSortKey('vmid')}>{sortLabel('vmid', 'ID')}</button>
@@ -217,7 +189,7 @@ function GuestsPanel({ state, guestRates, busyGuest, onAction, onDelete }: {
         const links = guestLinks(cfg, guest);
         const dash = templateUrl(cfg.dash, guest) || links[0]?.url;
         const ramPct = guest.maxmem ? (guest.mem ?? 0) / guest.maxmem * 100 : 0;
-        const rate = guestRates[guest.vmid] ?? { inRate: 0, outRate: 0 };
+        const rate = guestRate(guest);
         const disks = guestDiskDatasets(state.datasets, guest.vmid);
         return (
           <div
@@ -264,12 +236,12 @@ function GuestsPanel({ state, guestRates, busyGuest, onAction, onDelete }: {
 function StoragePanel({ state }: { state: DashboardState }) {
   return (
     <section className="dense-section storage-panel">
-      <div className="dense-title"><span>Storage</span><span>{state.pools.length} pools</span></div>
+      <div className="dense-title"><span>Storage</span><span>{state.pools.length} pools · <SectionAge collector={state.collectors.zfs} /></span></div>
       <div className="pool-summary-head"><span>Pool</span><span>Used / Total</span><span>Used</span><span>Health</span><span>Scan / Errors</span></div>
       {state.pools.map(pool => (
         <div className="pool-summary-row" key={pool.name}>
           <span>{pool.name}</span>
-          <span className={pool.cap > 85 ? 'danger' : pool.cap > 75 ? 'warn-text' : ''}>{pool.alloc} / {pool.size}</span>
+          <span className={pool.cap > 85 ? 'danger' : pool.cap > 75 ? 'warn-text' : ''}>{fmtBytes(pool.alloc)} / {fmtBytes(pool.size)}</span>
           <span className="metric-cell"><MiniBar value={pool.cap} />{pool.cap}%</span>
           <span className={`health ${pool.health.toLowerCase()}`}>{pool.health}</span>
           <span className="pool-notes" title={[pool.scan, pool.errors].filter(Boolean).join('\n')}>{pool.errors || pool.scan || '-'}</span>
@@ -279,7 +251,7 @@ function StoragePanel({ state }: { state: DashboardState }) {
   );
 }
 
-function SnapshotsPanel({ snapshots }: { snapshots: Snapshot[] }) {
+function SnapshotsPanel({ snapshots, onSnapshot }: { snapshots: Snapshot[]; onSnapshot: (dataset: string) => void }) {
   const grouped = new Map<string, Snapshot[]>();
   snapshots.forEach(snapshot => {
     if (!grouped.has(snapshot.dataset)) grouped.set(snapshot.dataset, []);
@@ -300,7 +272,7 @@ function SnapshotsPanel({ snapshots }: { snapshots: Snapshot[] }) {
           <span className="num">{row.snaps.length}</span>
           <span className="num">{fmtBytes(row.used)}</span>
           <span className="num">{timeAgo(row.newest.createdAt)}</span>
-          <button>+ Snapshot</button>
+          <button onClick={() => onSnapshot(row.dataset)}>+ Snapshot</button>
         </div>
       ))}
     </section>
@@ -323,9 +295,9 @@ function DatasetsPanel({ state, onOpen }: { state: DashboardState; onOpen: (data
         return (
           <div className="dataset-row" key={ds.name}>
             <button className="dataset-link" onClick={() => onOpen(ds)} title={ds.name}>{ds.name}</button>
-            <span className="num">{ds.used}</span>
-            <span className="num">{ds.avail}</span>
-            <span className="num">{ds.refer}</span>
+            <span className="num">{fmtBytes(ds.used)}</span>
+            <span className="num">{fmtBytes(ds.avail)}</span>
+            <span className="num">{fmtBytes(ds.refer)}</span>
             <span title={ds.mountpoint}>{ds.mountpoint}</span>
             <button onClick={() => onOpen(ds)}>{snaps.length}</button>
             <button onClick={() => onOpen(ds)}>{shareLabel}</button>
@@ -337,16 +309,11 @@ function DatasetsPanel({ state, onOpen }: { state: DashboardState; onOpen: (data
   );
 }
 
-function UsersModal({ onClose }: { onClose: () => void }) {
-  const [users, setUsers] = useState<SmbUser[]>([]);
+function UsersModal({ users, onClose }: { users: SmbUser[]; onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const load = useCallback(() => {
-    fetchUsers().then(data => setUsers(data.users ?? [])).catch(e => setError((e as Error).message));
-  }, []);
-  useEffect(() => { load(); }, [load]);
   const addUser = async () => {
     if (!username || !password) return;
     setBusy(true);
@@ -355,7 +322,6 @@ function UsersModal({ onClose }: { onClose: () => void }) {
       await createUser(username, password);
       setUsername('');
       setPassword('');
-      load();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -367,7 +333,6 @@ function UsersModal({ onClose }: { onClose: () => void }) {
     setBusy(true);
     try {
       await deleteUser(name);
-      load();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -396,11 +361,10 @@ function UsersModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function DatasetModal({ dataset, state, onClose, onStatePatch }: {
+function DatasetModal({ dataset, state, onClose }: {
   dataset: Dataset;
   state: DashboardState;
   onClose: () => void;
-  onStatePatch: (patch: Partial<DashboardState>) => void;
 }) {
   const [shares, setShares] = useState<Share[]>(datasetShares(dataset, state.shares));
   const [editing, setEditing] = useState<Share | null>(null);
@@ -435,7 +399,7 @@ function DatasetModal({ dataset, state, onClose, onStatePatch }: {
       const exists = state.shares.some(item => item.name === share.name);
       const nextShares = exists ? state.shares.map(item => item.name === share.name ? share : item) : [...state.shares, share];
       const data = await putSmb(nextShares);
-      onStatePatch({ shares: data.shares ?? nextShares });
+      setShares(datasetShares(dataset, data.shares ?? nextShares));
       setEditing(null);
     } catch (e) {
       setError((e as Error).message);
@@ -451,7 +415,7 @@ function DatasetModal({ dataset, state, onClose, onStatePatch }: {
     try {
       const nextShares = state.shares.filter(item => item.name !== share.name);
       const data = await putSmb(nextShares);
-      onStatePatch({ shares: data.shares ?? nextShares });
+      setShares(datasetShares(dataset, data.shares ?? nextShares));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -486,9 +450,9 @@ function DatasetModal({ dataset, state, onClose, onStatePatch }: {
             <div className="modal-section-title">Dataset</div>
             <div className="modal-props">
               <span>Mount</span><strong>{dataset.mountpoint}</strong>
-              <span>Used</span><strong>{dataset.used}</strong>
-              <span>Avail</span><strong>{dataset.avail}</strong>
-              <span>Refer</span><strong>{dataset.refer}</strong>
+              <span>Used</span><strong>{fmtBytes(dataset.used)}</strong>
+              <span>Avail</span><strong>{fmtBytes(dataset.avail)}</strong>
+              <span>Refer</span><strong>{fmtBytes(dataset.refer)}</strong>
               <span>Type</span><strong>{dataset.type}</strong>
             </div>
           </section>
@@ -525,7 +489,7 @@ function DatasetModal({ dataset, state, onClose, onStatePatch }: {
           )}
         </div>
       </div>
-      {showUsers && <UsersModal onClose={() => setShowUsers(false)} />}
+      {showUsers && <UsersModal users={state.smbUsers} onClose={() => setShowUsers(false)} />}
     </div>
   );
 }
@@ -552,96 +516,34 @@ function ShareForm({ share, busy, onCancel, onSave }: {
   );
 }
 
-function ChartsRail({ history, activity }: { history: RatePoint[]; activity: ActivityEntry[] }) {
+function ActivityPanel({ activity }: { activity: ActivityEntry[] }) {
   return (
-    <aside className="charts-rail">
-      <div className="rail-block"><div className="rail-title">Node CPU</div><Sparkline points={history} pick={p => p.cpu} /></div>
-      <div className="rail-block"><div className="rail-title">Node RAM</div><Sparkline points={history} pick={p => p.ram} /></div>
-      <div className="rail-block"><div className="rail-title">I/O Wait</div><Sparkline points={history} pick={p => p.iowait} /></div>
-      <div className="rail-block"><div className="rail-title">Network</div><Sparkline points={history} pick={p => Math.max(p.netIn, p.netOut)} className="spark net" /></div>
-      <div className="rail-block activity-block">
-        <div className="rail-title">Activity</div>
-        {activity.length === 0 && <div className="empty-log">No dashboard actions yet</div>}
-        {activity.slice(0, 20).map(item => (
-          <details key={item.id} className={item.exitCode === 0 ? '' : 'failed'}>
-            <summary><span>{new Date(item.timestamp).toLocaleTimeString()}</span><span>{item.action}</span><span>{item.target}</span></summary>
-            <pre>{[item.stdout, item.stderr].filter(Boolean).join('\n') || `exit ${item.exitCode}`}</pre>
-          </details>
-        ))}
-      </div>
-    </aside>
+    <section className="dense-section activity-panel">
+      <div className="dense-title"><span>Activity</span><span>{activity.length} recent</span></div>
+      {activity.length === 0 && <div className="empty-log">No dashboard actions yet</div>}
+      {activity.slice(0, 20).map(item => (
+        <details key={item.id} className={item.ok ? '' : 'failed'}>
+          <summary><span>{new Date(item.timestamp).toLocaleString()}</span><span>{item.action}</span><span>{item.target}</span></summary>
+          <pre>{item.output || (item.ok ? 'ok' : `exit ${item.exitCode}`)}</pre>
+        </details>
+      ))}
+    </section>
   );
 }
 
 export function ProxmoxDashboard() {
-  const [state, setState] = useState<DashboardState>(EMPTY_STATE);
-  const [error, setError] = useState<string | null>(null);
+  const [state, setState] = useState<DashboardState | null>(null);
+  const [connected, setConnected] = useState(true);
   const [busyGuest, setBusyGuest] = useState<number | null>(null);
-  const [history, setHistory] = useState<RatePoint[]>([]);
-  const [guestRates, setGuestRates] = useState<Record<number, { inRate: number; outRate: number }>>({});
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
-  const lastGuestRatesRef = useRef<Record<number, GuestRate>>({});
-  const guestRatesRef = useRef<Record<number, { inRate: number; outRate: number }>>({});
 
-  const load = useCallback(async () => {
-    try {
-      const next = await fetchState();
-      setState(previous => {
-        const preserveStorage = previous.pools.length > 0 && next.pools.length === 0 && next.datasets.length === 0 && next.snapshots.length === 0;
-        return preserveStorage
-          ? { ...next, pools: previous.pools, datasets: previous.datasets, snapshots: previous.snapshots, shares: next.shares.length > 0 ? next.shares : previous.shares }
-          : next;
-      });
-      setError(null);
-      const now = Date.now();
-      const previousRates = lastGuestRatesRef.current;
-      const nextRates: Record<number, { inRate: number; outRate: number }> = {};
-      const freshRates: Record<number, GuestRate> = {};
-      for (const guest of next.guests) {
-        const old = previousRates[guest.vmid];
-        freshRates[guest.vmid] = { at: now, netin: guest.netin ?? 0, netout: guest.netout ?? 0 };
-        if (old && now > old.at) {
-          const secs = (now - old.at) / 1000;
-          nextRates[guest.vmid] = {
-            inRate: Math.max(0, ((guest.netin ?? 0) - old.netin) / secs),
-            outRate: Math.max(0, ((guest.netout ?? 0) - old.netout) / secs),
-          };
-        } else {
-          nextRates[guest.vmid] = guestRatesRef.current[guest.vmid] ?? { inRate: 0, outRate: 0 };
-        }
-      }
-      lastGuestRatesRef.current = freshRates;
-      guestRatesRef.current = nextRates;
-      setGuestRates(nextRates);
-      setHistory(prev => {
-        const ram = next.host ? (next.host.mem.usedBytes / Math.max(1, next.host.mem.totalBytes)) * 100 : 0;
-        const netIn = next.guests.reduce((sum, guest) => sum + (guest.netin ?? 0), 0);
-        const netOut = next.guests.reduce((sum, guest) => sum + (guest.netout ?? 0), 0);
-        const point = { at: Date.now(), cpu: next.host?.cpu.pct ?? 0, ram, iowait: 0, netIn, netOut };
-        return [...prev, point].slice(-360);
-      });
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-    const id = window.setInterval(load, 2000);
-    return () => window.clearInterval(id);
-  }, [load]);
-
-  const stale = useMemo(() => Date.now() - new Date(state.timestamp).getTime() > 10_000, [state.timestamp]);
+  useEffect(() => subscribeState(setState, setConnected), []);
 
   const onAction = async (guest: Guest, action: string) => {
-    if (action === 'snapshot') {
-      alert(`Snapshot dialog is deferred. Guest ${guest.vmid} disks are listed in the snapshot panel.`);
-      return;
-    }
+    if (action === 'snapshot' && !window.confirm(`Take a Proxmox snapshot of ${guest.name} (${guest.vmid})?`)) return;
     setBusyGuest(guest.vmid);
     try {
-      await guestActionByRoute(guest.vmid, action);
-      await load();
+      await guestAction(guest.vmid, action);
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -655,7 +557,6 @@ export function ProxmoxDashboard() {
     setBusyGuest(guest.vmid);
     try {
       await deleteGuest(guest.vmid, confirmText);
-      await load();
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -663,28 +564,54 @@ export function ProxmoxDashboard() {
     }
   };
 
+  const onSnapshotDataset = async (dataset: string) => {
+    const name = window.prompt(`Snapshot name for ${dataset}`, defaultSnapName());
+    if (!name) return;
+    try {
+      await createSnapshot(dataset, name.trim());
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  };
+
+  if (!state) {
+    return (
+      <div className="proxmox-app">
+        <div className="host-strip"><div className="host-strip-main"><span className="status-pill">{connected ? 'loading' : 'disconnected'}</span><strong>proxmox</strong></div></div>
+        <main className="dashboard-shell">
+          <section className="dense-section"><div className="dense-title"><span>Guests</span></div><SkeletonRows rows={12} /></section>
+          <section className="dense-section"><div className="dense-title"><span>Storage</span></div><SkeletonRows rows={3} /></section>
+        </main>
+      </div>
+    );
+  }
+
+  const failing = Object.entries(state.collectors).filter(([, c]) => c.ok === false);
+  // A selected dataset is a snapshot of the row; show its latest values as they arrive.
+  const currentDataset = selectedDataset && (state.datasets.find(ds => ds.name === selectedDataset.name) ?? selectedDataset);
+
   return (
     <div className="proxmox-app">
-      <HostBar state={state} stale={stale || !!error} />
-      {error && <div className="dash-error">Backend/state error: {error}. Showing last known state where available.</div>}
+      <HostBar state={state} connected={connected} />
+      {!connected && <div className="dash-error">Lost connection to onas. Showing the last state received; reconnecting.</div>}
+      {failing.length > 0 && (
+        <div className="collector-warning">
+          {failing.map(([name, c]) => <span key={name} title={c.error ?? ''}>{name} collector failing{c.lastOk ? ` (last good ${timeAgo(c.lastOk)})` : ''}. </span>)}
+        </div>
+      )}
       <main className="dashboard-shell">
         <div className="dashboard-main">
-          <GuestsPanel state={state} guestRates={guestRates} busyGuest={busyGuest} onAction={onAction} onDelete={onDelete} />
+          <GuestsPanel state={state} busyGuest={busyGuest} onAction={onAction} onDelete={onDelete} />
           <div className="lower-grid">
             <StoragePanel state={state} />
-            <SnapshotsPanel snapshots={state.snapshots} />
+            <SnapshotsPanel snapshots={state.snapshots} onSnapshot={onSnapshotDataset} />
           </div>
           <DatasetsPanel state={state} onOpen={setSelectedDataset} />
+          <ActivityPanel activity={state.activity} />
         </div>
-        <ChartsRail history={history} activity={state.activity} />
       </main>
-      {selectedDataset && (
-        <DatasetModal
-          dataset={selectedDataset}
-          state={state}
-          onClose={() => setSelectedDataset(null)}
-          onStatePatch={patch => setState(current => ({ ...current, ...patch }))}
-        />
+      {currentDataset && (
+        <DatasetModal dataset={currentDataset} state={state} onClose={() => setSelectedDataset(null)} />
       )}
     </div>
   );

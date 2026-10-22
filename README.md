@@ -1,94 +1,59 @@
-# NAS Dashboard
+# onas
 
-A self-hosted dashboard for monitoring and managing a Proxmox ZFS NAS over SSH, running as an LXC container service.
+The state and control plane for WTR, the Proxmox host: it collects what's running and how healthy it is on a schedule, keeps that (with history) in SQLite, and serves a dashboard plus a small set of logged actions. It also manages the SMB shares and users served from the onas LXC (119). Plan and phases: [docs/PLAN.md](docs/PLAN.md).
 
-## Features
-
-- **Storage** — Live ZFS pool status, vdev topology, per-pool I/O sparklines (2s polling), dataset/volume table with snapshot counts, and a detail panel for per-dataset properties and snapshot management
-- **Shares** — SMB share configuration UI backed by `/etc/samba/smb.conf`; create, edit, and delete shares with live reload
-- **Users** — SMB user management via `useradd` + `smbpasswd`; create users, reset passwords, delete users
-
-## Architecture
+## How it works
 
 ```
-/opt/nas-dashboard/
-  server.js          Express API — runs on port 3000
-  package.json       Server deps (express, ssh2)
-  public/            Vite build output — served statically
-  client/
-    src/
-      App.tsx
-      index.css
-      lib/            types.ts · helpers.ts · api.ts
-      components/
-        Topbar.tsx
-        storage/      StorageView · PoolCard · IoSection · DatasetTable · DetailPanel
-        shares/       SharesView · ShareRow · SharePanel
-        users/        UsersView · UserRow · UserPanel
+collectors (scheduled) ──▶ SQLite /var/lib/onas/onas.db ──▶ /api/state, /api/events (SSE) ──▶ UI
+        │                                                        ▲
+        └── Proxmox API (token), SSH to WTR only as fallback      └── actions (logged in `actions`)
 ```
 
-**Backend** — Node.js/Express. ZFS data is fetched by SSHing to the Proxmox host at `192.168.2.2` (system SSH key, no library needed). SMB config and user management run locally inside the LXC.
+- **Collectors** (`server/collectors/`) each run on their own interval: `pve` (guests and node load, 10 s), `node` (load average, kernel, 30 s), `zfs` (pools by API, datasets and snapshots by SSH, 60 s), `smb` (local, 60 s), `disks` (SMART, hourly), `updates` (host apt, hourly), `maintenance` (metric rollups and pruning). Every run is recorded in `collector_runs`; a failing collector keeps its last good data and shows as failing in the UI.
+- **Proxmox access** (`server/pve.js`) uses the HTTPS API with the tokens in `/etc/onas/pve.env`. Without a token, or when the token isn't allowed (PVE 9 wants `Sys.Modify` to list apt updates), it runs the same path through `pvesh` over one multiplexed SSH connection.
+- **Reads never touch WTR.** `/api/state` is assembled from the database in a few milliseconds; `/api/events` pushes it again whenever a collector finishes or an action is recorded.
+- **Actions** (guest power, PVE snapshots, delete; ZFS snapshots; SMB shares and users) go through `server/routes/`, are recorded in the `actions` table and re-run the relevant collector.
+- **History**: `metrics` keeps 48 h of 10-second samples, `metrics_5m` 90 days of 5-minute averages. `/api/metrics?series=host.cpu&hours=24`.
+- `/api/health` returns 503 and lists stale collectors when any has missed three intervals.
 
-**Frontend** — Vite + React + TypeScript. Built to `public/` and served by Express. Dark industrial aesthetic: Syne display font, IBM Plex Mono, amber for the `bulk` pool, cyan for `fast`.
-
-## ZFS Setup (Proxmox host 192.168.2.2)
-
-| Pool | Config | Size |
-|------|--------|------|
-| `bulk` | RAIDZ2 — 6× WD 6TB | 32.7T |
-| `fast` | Mirror — 2× WD Black SN850X 2TB NVMe | 1.81T |
-
-## Bind Mounts (LXC → host)
-
-These are configured on the Proxmox host in the LXC config and expose the bulk datasets inside the container for Samba:
-
-| Host path | Mount point |
-|-----------|-------------|
-| `/bulk/media` | `/srv/media` |
-| `/bulk/backups` | `/srv/backups` |
-| `/bulk/photos` | `/srv/photos` |
-| `/bulk/videos` | `/srv/videos` |
-| `/bulk/roms` | `/srv/roms` |
+```
+server/
+  index.js        Express app, SSE, health, metrics
+  db.js           node:sqlite, migrations in migrations/NNN_*.sql
+  scheduler.js    runs collectors, records runs
+  pve.js ssh.js   Proxmox API / pvesh-over-SSH, multiplexed SSH
+  collectors/     one module per source
+  routes/         guests, storage (ZFS snapshots), smb
+  state.js        builds the dashboard state from the database
+client/           Vite + React + TypeScript, built to public/
+```
 
 ## Running
 
-The dashboard runs as a systemd service:
+Node 24 or later (it uses the built-in `node:sqlite`).
 
 ```bash
-systemctl status nas-dashboard
-systemctl restart nas-dashboard
-journalctl -u nas-dashboard -f
+npm install && (cd client && npm install)
+npm run dev                 # API on :3000 with ./onas-dev.db; reads WTR over SSH unless PVE_* tokens are set
+cd client && npm run dev    # Vite with HMR, proxies /api to :3000
 ```
 
-## Development
+SMB collection only works inside the LXC (it reads `/etc/samba/smb.conf` and runs `pdbedit`), so it shows as failing on a Mac.
+
+## Deploying
 
 ```bash
-# Terminal 1 — Express API
-node server.js
-
-# Terminal 2 — Vite dev server with HMR (proxies /api → :3000)
-cd client && npm run dev
+ops/guests/119-onas/deploy
 ```
 
-## Production build
+Builds the client, installs Node 24 and the unit if needed, copies the app to `/opt/onas`, restarts `onas.service` and runs `check.sh`. See [ops/guests/119-onas](ops/guests/119-onas/README.md).
 
-```bash
-cd client && npm run build   # outputs to ../public/
-# then restart the service to serve the new build
-systemctl restart nas-dashboard
-```
+## Storage on WTR
 
-## API Endpoints
+| Pool | Config | Size |
+|------|--------|------|
+| `bulk` | RAIDZ2, 6× WD 6TB | 32.7T |
+| `fast` | Mirror, 2× WD Black SN850X 2TB NVMe | 1.81T |
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/zfs` | Pool list, datasets, snapshots |
-| GET | `/api/iostat` | Per-pool I/O rates (2-sample delta) |
-| GET | `/api/dataset/:name` | ZFS properties for one dataset |
-| POST | `/api/snapshot` | Create a snapshot |
-| GET | `/api/smb` | Parse `/etc/samba/smb.conf` → share list |
-| PUT | `/api/smb` | Write share list → reload smbd |
-| GET | `/api/users` | List SMB users via `pdbedit -L` |
-| POST | `/api/users` | Create user (`useradd` + `smbpasswd -a`) |
-| DELETE | `/api/users/:name` | Delete user (`smbpasswd -x` + `userdel`) |
-| PUT | `/api/users/:name/password` | Reset password via `smbpasswd -s` |
+The SMB shares are bulk datasets bind-mounted into LXC 119: `/bulk/{media,backups,photos,videos,roms}` → `/srv/…`.
