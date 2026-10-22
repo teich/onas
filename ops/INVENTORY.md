@@ -31,7 +31,7 @@ IP "dhcp → x" means the address isn't pinned (it may be a DHCP reservation, **
 | 109 | cloudflared-aac | VLAN5 dhcp → 192.168.5.57 | Connector for tunnel `BV_AAC` (AAC account). Only route: n8n.asphaltanchors.com → 192.168.5.214:5678, **dead since n8n was removed** | Token in the unit's command line; cloudflared 2026.3.0 (old); no PatchMon agent |
 | 110 | evcc | 192.168.2.20 | evcc solar/EV charging (:7070) | Stale Tailscale node "evcc" (offline 247 days) |
 | 111 | uptimekuma | dhcp → .115 | Uptime Kuma (:3001) | Homepage links to the DHCP IP |
-| 112 | proxmox-backup-server | 192.168.2.9 | PBS; datastore `bulk-backups` = `/bulk/backups/pbs` | Daily GC + prune. No verify job, no sync/remote |
+| 112 | proxmox-backup-server | 192.168.2.9 | PBS 4.2.8 (upgraded 2026-10-21); datastore `bulk-backups` = `/bulk/backups/pbs`; 128 GB S3 cache at `/mnt/s3-cache` | Daily GC + prune. No verify job yet. B2 offsite datastore in progress, see `ops/guests/112-proxmox-backup-server` |
 | 113 | aac-external-apps | VLAN5 | **stopped**. Abandoned Docker host from 2025-10-31; only `hello-world` was ever run | Cruft |
 | 114 | patchmon | dhcp → .122 | PatchMon server (:3000) | Recreated 2026-10-21 08:36 |
 | 115 | 2core | 192.168.2.6 | In development: alternative UI for the property's Tucor irrigation controllers. Docker `/opt/2core` (:8787 on localhost; reached over Tailscale) | Code in `~/src` and GitHub |
@@ -56,6 +56,7 @@ Removed 2026-10-21 09:05 by oren@pve (cruft, confirmed): 120 ollama, 121 n8n. Th
 - **Guest backups**: nightly at 21:00 to PBS, all guests, snapshot mode. Retention: 7 daily, 4 weekly, 12 monthly, 1 yearly. Succeeding every night.
 - **Not backed up**: bind mounts are excluded from guest backups. That leaves out `/bulk/photos`, `/bulk/media`, `/bulk/videos`, `/fast/apps` (the arr configs) and `/bulk/backups` itself. These datasets have **no automatic ZFS snapshots** (only manual ones from 2026-10-13) and **no offsite copy**.
 - **PBS is on the same pool it protects.** Losing `bulk` loses both the data and the backups.
+- **Offsite (started 2026-10-21):** Backblaze B2 bucket `teich-wtr-pbs` as the PBS datastore `b2-offsite`. Encrypted guest backups sync nightly, and WTR sends photos, videos, arr configs and old machine backups itself (`ops/host`). The first upload of about 5.6 TB at about 25 Mbps should finish around mid-November.
 - **Alert email** (fixed 2026-10-21): WTR's Postfix relays through Gmail (smtp.gmail.com:587, app password for oren@teich.net) and PBS relays through WTR. See `ops/host`. Before the fix, port 25 was blocked and alerts had been stuck since at least 2026-10-18.
 - `/bulk/backups` also holds AAC, Cadillac, m1-laptop and `DELETE-oren-m1-laptop` folders **?**
 

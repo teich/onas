@@ -1,0 +1,23 @@
+#!/bin/sh
+# Back up the WTR data that guest backups skip (bind mounts) to the b2-offsite
+# PBS datastore, encrypted with the same key as the guest backups.
+# Managed in onas ops/host. Run by wtr-offsite-backup.timer.
+set -eu
+
+# PBS_REPOSITORY, PBS_FINGERPRINT and PBS_PASSWORD (API token wtr-host@pbs!offsite).
+# Root-only, created on WTR, not in ops.
+set -a
+. /etc/wtr-offsite-backup.env
+set +a
+
+# Order matters on a slow uplink: small and irreplaceable first, videos last.
+exec proxmox-backup-client backup \
+	apps.pxar:/fast/apps \
+	aac.pxar:/bulk/backups/AAC \
+	photos.pxar:/bulk/photos \
+	cadillac.pxar:/bulk/backups/Cadillac \
+	m1-laptop.pxar:/bulk/backups/m1-laptop \
+	videos.pxar:/bulk/videos \
+	--backup-type host --backup-id wtr \
+	--keyfile /etc/pve/priv/storage/pbs-lxc.enc \
+	--change-detection-mode metadata

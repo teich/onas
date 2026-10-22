@@ -3,6 +3,10 @@
 fail=0
 [ "$(postconf -h relayhost)" = "[192.168.2.2]:25" ] || { echo "postfix relayhost is not WTR"; fail=1; }
 systemctl is-active -q postfix || { echo "postfix not active"; fail=1; }
+systemctl is-active -q proxmox-backup-proxy || { echo "proxmox-backup-proxy not active"; fail=1; }
+failed=$(systemctl --failed --no-legend --plain | awk '{print $1}' | tr '\n' ' ')
+[ -z "$failed" ] || { echo "failed units: $failed"; fail=1; }
+mountpoint -q /mnt/s3-cache || { echo "S3 cache volume not mounted at /mnt/s3-cache"; fail=1; }
 queued=$(mailq 2>/dev/null | grep -c '^[0-9A-F]')
 [ "$queued" -eq 0 ] || { echo "$queued messages stuck in the mail queue"; fail=1; }
 exit $fail

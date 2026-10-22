@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up WTR data to the b2-offsite PBS datastore
+Documentation=file:///usr/local/sbin/wtr-offsite-backup
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/wtr-offsite-backup
+Nice=10
+IOSchedulingClass=idle
