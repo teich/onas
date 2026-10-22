@@ -38,6 +38,7 @@ IP "dhcp → x" means the address isn't pinned (it may be a DHCP reservation, **
 | 116 | personal-windows (VM) | — | Windows 11, **stopped** | EFI disk lacks the 2023 Secure Boot certs (nightly backup warning) |
 | 117 | gamm | dhcp → .218 | **AAC** Google Ads MCP gateway, `gamm.grouse-crested.ts.net` | Code `~/src/aac/gamm` |
 | 119 | onas | dhcp → .189 | Samba shares (media, backups, photos, videos, roms) + this dashboard (:3000) | Customized, see `ops/guests/119-onas` (Node 24 from NodeSource, `onas.service`, 2026-10-22) |
+| 122 | books | VLAN5 dhcp → 192.168.5.149 | **AAC** SlowBooks Pro (Docker prod stack: app + Postgres 17), tailnet-only at `books.grouse-crested.ts.net` via tailscale serve | Created 2026-10-22, see `ops/guests/122-books` |
 | 301 | acc-external-apps (VM) | VLAN5 | **stopped**. Second try at 113 (2025-11-12): Docker + virtiofs mount of `/fast/apps`; only `hello-world` was ever run | Cruft. Name has an "acc" typo |
 
 Removed 2026-10-21 09:05 by oren@pve (cruft, confirmed): 120 ollama, 121 n8n. The 2026-10-20 PBS backups of both still exist.
@@ -86,6 +87,7 @@ Checked with `ops/bin/unifi` on 2026-10-21.
 | quickbooks VM 108 | 192.168.5.221 | DHCP, not reserved |
 | dash 105, cloudflared-aac 109 | 192.168.5.30, .5.57 | DHCP, not reserved (outbound tunnel / Tailscale only, so a change is harmless) |
 | cloudflared-teich 106, gamm 117 | .181, .218 | DHCP, not reserved (harmless) |
+| books 122 | 192.168.5.149 | DHCP, not reserved (Tailscale only, so a change is harmless) |
 
 ### Reservation cleanup (2026-10-21)
 

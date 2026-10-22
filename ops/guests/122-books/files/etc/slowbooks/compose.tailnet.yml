@@ -1,0 +1,22 @@
+# Layered on SlowBooks' docker-compose.prod.yml (see onas ops/guests/122-books/README.md).
+services:
+  postgres:
+    volumes:
+      # Same target as the prod file, so this replaces its ./certs/postgres mount
+      # and the checkout in /opt/slowbooks stays clean.
+      - /etc/slowbooks/certs/postgres:/var/lib/postgresql/certs:ro
+  slowbooks:
+    # Loopback only: tailscale serve is the one door in.
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      # docker-proxy reaches the container from the bridge gateway, not 127.0.0.1,
+      # so uvicorn would ignore tailscale serve's X-Forwarded-Proto: https and
+      # FORCE_HTTPS would redirect every request forever. Nothing but tailscaled
+      # can reach the port, so trusting any forwarder is safe here.
+      FORWARDED_ALLOW_IPS: "*"
+    # The image's HEALTHCHECK asks for plain http://127.0.0.1:3001/health, which
+    # FORCE_HTTPS redirects to an https the container doesn't serve, so it always
+    # reports unhealthy. Ask the way tailscale serve does.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; r=urllib.request.Request('http://127.0.0.1:3001/health', headers={'X-Forwarded-Proto': 'https'}); sys.exit(0 if urllib.request.urlopen(r, timeout=3).status == 200 else 1)"]

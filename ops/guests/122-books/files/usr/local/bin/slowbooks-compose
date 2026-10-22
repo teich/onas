@@ -1,0 +1,6 @@
+#!/bin/sh
+# docker compose for the SlowBooks stack: the release checkout in /opt/slowbooks,
+# secrets in /etc/slowbooks/env (mode 600), the tailnet override from onas ops/.
+exec docker compose -p slowbooks --project-directory /opt/slowbooks \
+	--env-file /etc/slowbooks/env \
+	-f /opt/slowbooks/docker-compose.prod.yml -f /etc/slowbooks/compose.tailnet.yml "$@"
