@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import type { DashboardState, Dataset, Disk, Pool, Vdev } from '../lib/types';
+import type { DashboardState, Dataset, Disk, HardwareState, Pool, Vdev } from '../lib/types';
 import { buildStorageModel, isGuestDisk, poolOf, SELF_VMID, type StorageModel } from '../lib/storageModel';
 import { StorageMap, type MapLayout, type MapTarget } from '../viz/StorageMap';
 import { Freshness, Meter, Panel, StatusBadge } from '../components/ui';
 import { fmtBytes, fmtRate, timeAgo } from '../lib/format';
 import { poolColor, type StatusLevel } from '../lib/palette';
+import { diskFor, diskLevel, slotName } from '../lib/diskHealth';
 import { navigate } from '../App';
 
 function scrubInfo(scan: string): { text: string; level: StatusLevel } {
@@ -38,23 +39,16 @@ function PoolTile({ pool }: { pool: Pool }) {
   );
 }
 
-function diskLevel(d: Disk): { level: StatusLevel; note: string } {
-  if (d.health !== 'PASSED' && d.health !== 'OK') return { level: 'critical', note: `SMART ${d.health}` };
-  if ((d.reallocated ?? 0) > 0) return { level: 'serious', note: `${d.reallocated} reallocated sectors` };
-  const hot = d.type === 'nvme' ? 70 : 50;
-  if (d.tempC != null && d.tempC >= hot + 8) return { level: 'critical', note: `${d.tempC}°C` };
-  if (d.tempC != null && d.tempC >= hot) return { level: 'warning', note: `${d.tempC}°C, running warm` };
-  if (d.wearout != null && d.wearout < 20) return { level: 'warning', note: `${d.wearout}% life left` };
-  return { level: 'good', note: 'healthy' };
-}
-
-function DiskTile({ disk }: { disk: Disk | undefined; name: string }) {
+function DiskTile({ disk, slot }: { disk: Disk | undefined; name: string; slot: string | null }) {
   if (!disk) return <div className="disk-tile unknown"><span className="muted">unknown disk</span></div>;
   const { level, note } = diskLevel(disk);
   const years = disk.powerOnHours != null ? disk.powerOnHours / 8766 : null;
   return (
     <div className={`disk-tile level-${level}`}>
-      <div className="disk-dev">{disk.devpath.replace('/dev/', '')}<StatusBadge level={level}>{note}</StatusBadge></div>
+      <div className="disk-dev">
+        <span className="disk-dev-name">{disk.devpath.replace('/dev/', '')}{slot && <a className="slot-chip" href={`#/machine?slot=${slot}`} title="Show this drive in the Machine view">{slotName(slot)}</a>}</span>
+        <StatusBadge level={level}>{note}</StatusBadge>
+      </div>
       <div className="disk-model" title={`${disk.model} · ${disk.serial}`}>{disk.model}</div>
       <div className="disk-facts">
         <span>{fmtBytes(disk.size, 0)}</span>
@@ -66,12 +60,7 @@ function DiskTile({ disk }: { disk: Disk | undefined; name: string }) {
   );
 }
 
-function diskFor(disks: Disk[], leaf: string): Disk | undefined {
-  const id = leaf.replace(/-part\d+$/, '');
-  return disks.find(d => d.devpath === id || (d.serial && id.includes(d.serial)) || id.endsWith(d.devpath.replace('/dev/', '')));
-}
-
-function PoolLayout({ pool, disks }: { pool: Pool; disks: Disk[] }) {
+function PoolLayout({ pool, disks, hardware }: { pool: Pool; disks: Disk[]; hardware: HardwareState | null }) {
   const groups: Vdev[] = pool.vdevs.length && pool.vdevs.every(v => v.leaf) ? [{ name: 'stripe', state: pool.health, read: 0, write: 0, cksum: 0, leaf: 0, children: pool.vdevs }] : pool.vdevs;
   return (
     <div className="pool-layout">
@@ -80,7 +69,11 @@ function PoolLayout({ pool, disks }: { pool: Pool; disks: Disk[] }) {
         <div key={v.name} className="vdev">
           <div className="vdev-name">{v.name.replace(/-\d+$/, '')} <span className="muted">{v.state.toLowerCase()}{v.read + v.write + v.cksum > 0 ? ` · ${v.read}/${v.write}/${v.cksum} errors` : ''}</span></div>
           <div className="disk-grid">
-            {(v.children ?? []).map(leaf => <DiskTile key={leaf.name} name={leaf.name} disk={diskFor(disks, leaf.name)} />)}
+            {(v.children ?? []).map(leaf => {
+              const disk = diskFor(disks, leaf.name);
+              const slot = disk ? hardware?.disks.find(h => (h.serial && h.serial === disk.serial) || `/dev/${h.name}` === disk.devpath)?.slot ?? null : null;
+              return <DiskTile key={leaf.name} name={leaf.name} disk={disk} slot={slot} />;
+            })}
           </div>
         </div>
       ))}
@@ -232,7 +225,7 @@ export function StorageView({ state }: { state: DashboardState }) {
 
       <div className="two-col">
         <Panel title="Disks" aside={<Freshness collector={state.collectors.disks} />}>
-          {state.pools.map(p => <PoolLayout key={p.name} pool={p} disks={state.disks} />)}
+          {state.pools.map(p => <PoolLayout key={p.name} pool={p} disks={state.disks} hardware={state.hardware} />)}
         </Panel>
         <Panel title="Datasets" aside={<span className="muted">{datasets.length} filesystems</span>}>
           <table className="table">

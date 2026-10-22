@@ -8,8 +8,10 @@ import { SharesView } from './views/SharesView';
 import { SnapshotsView } from './views/SnapshotsView';
 import { GuestsView } from './views/GuestsView';
 import { ActivityView } from './views/ActivityView';
+import { MachineView } from './views/MachineView';
 
 const TABS = [
+  { id: 'machine', label: 'Machine' },
   { id: 'storage', label: 'Storage' },
   { id: 'shares', label: 'Shares' },
   { id: 'snapshots', label: 'Snapshots' },
@@ -21,7 +23,7 @@ type Tab = (typeof TABS)[number]['id'];
 // The route is the hash: #/shares, #/snapshots?dataset=bulk/photos ...
 function readRoute(): { tab: Tab; params: URLSearchParams } {
   const [path, query = ''] = window.location.hash.replace(/^#\/?/, '').split('?');
-  const tab = (TABS.find(t => t.id === path)?.id ?? 'storage') as Tab;
+  const tab = (TABS.find(t => t.id === path)?.id ?? 'machine') as Tab;
   return { tab, params: new URLSearchParams(query) };
 }
 
@@ -71,9 +73,9 @@ export function App() {
   }, []);
 
   return (
-    <div className="app">
+    <div className={`app${route.tab === 'machine' ? ' app-fill' : ''}`}>
       <header className="topbar">
-        <a className="brand" href="#/storage">onas</a>
+        <a className="brand" href="#/machine">onas</a>
         <nav className="tabs">
           {TABS.map(t => (
             <a key={t.id} href={`#/${t.id}`} className={route.tab === t.id ? 'on' : ''}>{t.label}</a>
@@ -84,6 +86,7 @@ export function App() {
       <main className="content">
         {!state ? <div className="skeleton-page"><div /><div /><div /></div> : (
           <>
+            {route.tab === 'machine' && <MachineView state={state} params={route.params} />}
             {route.tab === 'storage' && <StorageView state={state} />}
             {route.tab === 'shares' && <SharesView state={state} params={route.params} />}
             {route.tab === 'snapshots' && <SnapshotsView state={state} params={route.params} />}

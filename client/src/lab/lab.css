@@ -1,0 +1,31 @@
+/* Machine lab: dev-only layout around the scene. Uses the app's tokens from styles.css. */
+html, body, #root { height: 100%; margin: 0; }
+body { overflow: hidden; }
+.lab { display: grid; grid-template-columns: 340px 1fr; height: 100%; }
+.lab.no-panel { grid-template-columns: 1fr; }
+.lab-panel {
+  overflow-y: auto; padding: 14px 16px 24px; background: var(--surface); border-right: 1px solid var(--hair-soft);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.lab-panel h1 { font-size: 15px; margin: 0 0 6px; }
+.lab-panel h2 { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 500; margin: 14px 0 4px; }
+.lab-row { display: flex; align-items: center; gap: 8px; }
+.lab-row > label { min-width: 64px; color: var(--ink-2); display: inline-flex; align-items: center; gap: 4px; }
+.lab-row input[type="range"] { flex: 1; min-width: 0; padding: 0; }
+.lab-row select { flex: 1; }
+.lab-row .num { min-width: 34px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.lab-small { font-size: 11.5px; }
+.lab-edit { display: flex; flex-direction: column; gap: 4px; }
+.lab-parts { display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; border: 1px solid var(--hair-soft); border-radius: 8px; }
+.lab-part { display: flex; align-items: center; gap: 8px; padding: 3px 8px; cursor: pointer; }
+.lab-part i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.lab-part span:nth-child(2) { flex: 1; }
+.lab-part:hover, .lab-part.hover { background: rgba(255, 255, 255, 0.05); }
+.lab-part.on { background: rgba(57, 135, 229, 0.18); }
+.lab-stage { position: relative; min-width: 0; min-height: 0; background: #000; }
+.lab-scene { width: 100%; height: 100%; }
+.lab-hud {
+  position: absolute; top: 10px; right: 12px; display: flex; gap: 14px; align-items: center; z-index: 3;
+  color: var(--ink-2); font-size: 12px; pointer-events: none;
+}
+.lab-hud button { pointer-events: auto; }
