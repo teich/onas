@@ -62,7 +62,7 @@ Removed 2026-10-21 09:05 by oren@pve (cruft, confirmed): 120 ollama, 121 n8n. Th
 
 ## Patch state
 
-Patching is done from PatchMon (http://192.168.2.122:3000): open a host and start a patch run, which runs apt on that guest through its agent. Before 2026-10-21 most guests had never been updated since install. On 2026-10-21 PatchMon patched every agent guest (about 700 packages, mostly Debian security fixes) after `pre-catchup` snapshots (`pre-patchmon-test` on 2core), and all services came back. Only patchmon (114) itself had updates left (3). The arr Docker images were updated by hand the same day (PatchMon only reports Docker updates; pull them on the arr guest). The PatchMon agent is missing on dash (105) and cloudflared-aac (109).
+Patching is done from PatchMon (http://192.168.2.122:3000): open a host and start a patch run, which runs apt on that guest through its agent. Before 2026-10-21 most guests had never been updated since install. On 2026-10-21 PatchMon patched every agent guest (about 700 packages, mostly Debian security fixes) after `pre-catchup` snapshots (`pre-patchmon-test` on 2core), and all services came back. Only patchmon (114) itself had updates left (3). The arr Docker images were updated by hand the same day (PatchMon only reports Docker updates; pull them on the arr guest). Since 2026-10-21 every running LXC installs Debian security updates automatically each day (`ops/common/security-updates`); everything else waits for a PatchMon "patch all" run. The PatchMon agent is missing on dash (105) and cloudflared-aac (109).
 
 ## Network
 

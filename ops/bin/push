@@ -1,21 +1,34 @@
 #!/bin/sh
 # Copy ops/guests/<id-name>/files/ onto that guest's root filesystem.
-# Usage: ops/bin/push 101-caddy    (or `push host` for ops/host/ onto WTR itself)
+# Usage: ops/bin/push 101-caddy    (or `push host` for ops/host/ onto WTR itself,
+#        or `push common/<name>` for a shared config onto every guest in its targets file)
 set -eu
 
 HOST=${WTR_HOST:-root@192.168.2.2}
 OPS=$(cd "$(dirname "$0")/.." && pwd)
-guest=${1:?usage: push <id-name>|host}
-if [ "$guest" = host ]; then
-	dir="$OPS/host"
-	run=""
-else
+guest=${1:?usage: push <id-name>|host|common/<name>}
+
+copy() { # copy <files-dir> <command prefix on WTR> <label>
+	COPYFILE_DISABLE=1 tar -C "$1" --uid 0 --gid 0 --no-mac-metadata --no-xattrs -cf - . \
+		| ssh "$HOST" "$2 tar -xpf - -C / --no-overwrite-dir"
+	echo "pushed $3"
+}
+
+case $guest in
+common/*)
+	dir="$OPS/$guest"
+	[ -d "$dir/files" ] && [ -f "$dir/targets" ] || { echo "no files/ or targets in $dir" >&2; exit 1; }
+	for target in $(cat "$dir/targets"); do
+		copy "$dir/files" "pct exec ${target%%-*} --" "$guest -> $target"
+	done
+	;;
+host)
+	[ -d "$OPS/host/files" ] || { echo "no files/ in $OPS/host" >&2; exit 1; }
+	copy "$OPS/host/files" "" host
+	;;
+*)
 	dir="$OPS/guests/$guest"
-	run="pct exec ${guest%%-*} --"
-fi
-
-[ -d "$dir/files" ] || { echo "no files/ in $dir" >&2; exit 1; }
-
-COPYFILE_DISABLE=1 tar -C "$dir/files" --uid 0 --gid 0 --no-mac-metadata --no-xattrs -cf - . \
-	| ssh "$HOST" "$run tar -xpf - -C / --no-overwrite-dir"
-echo "pushed $guest"
+	[ -d "$dir/files" ] || { echo "no files/ in $dir" >&2; exit 1; }
+	copy "$dir/files" "pct exec ${guest%%-*} --" "$guest"
+	;;
+esac

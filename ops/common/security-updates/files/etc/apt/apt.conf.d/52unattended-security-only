@@ -1,0 +1,11 @@
+// Managed in onas ops/common/security-updates. Edit there and run `ops/bin/push common/security-updates`.
+// Install Debian security updates automatically, nothing else. Vendor repos
+// (Docker, Caddy, Tailscale, Proxmox, PostgreSQL) and regular Debian updates
+// wait for a manual PatchMon "patch all" run.
+#clear Unattended-Upgrade::Allowed-Origins;
+#clear Unattended-Upgrade::Origins-Pattern;
+Unattended-Upgrade::Origins-Pattern {
+	"origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+};
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Remove-Unused-Dependencies "false";

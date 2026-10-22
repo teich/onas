@@ -4,11 +4,15 @@ Every change we make on WTR or a guest, beyond what the guest's installer gave u
 
 ```
 ops/
-  bin/push <id-name>     copy guests/<id-name>/files/ onto that guest's /  (`push host` for host/)
-  bin/check [id-name…]   run host/check.sh on WTR and each guest's check.sh inside it; prints only problems
+  bin/push <id-name>     copy guests/<id-name>/files/ onto that guest's /  (`push host` for host/,
+                         `push common/<name>` for a shared config onto each guest in its targets)
+  bin/check [id-name…]   run host/check.sh on WTR, each guest's check.sh, and (with no arguments) each
+                         common/<name>/check.sh in its targets; prints only problems
   bin/unifi <cmd>        read-only UniFi queries: networks, clients, known, reservations, devices
                          (key in Keychain as `unifi-api`; it can write, so make changes only when asked)
   host/                  the same layout, for WTR itself (README, files/, check.sh)
+  common/<name>/         a config shared by several guests: README, files/, check.sh, targets
+                         (one <vmid>-<hostname> per line)
   guests/<id>-<name>/
     README.md            what the guest is, what we changed and why (with dates)
     files/               files to install, laid out as a root filesystem
