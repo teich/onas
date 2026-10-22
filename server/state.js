@@ -56,6 +56,10 @@ const q = {
   actions: db.prepare('SELECT * FROM actions ORDER BY id DESC LIMIT 30'),
   mounts: db.prepare('SELECT * FROM guest_mounts ORDER BY vmid, slot'),
   connections: db.prepare('SELECT * FROM smb_connections ORDER BY share, connected_at'),
+  hwHost: db.prepare('SELECT * FROM hw_host WHERE id = 1'),
+  hwMemory: db.prepare('SELECT * FROM hw_memory ORDER BY slot'),
+  hwDisks: db.prepare('SELECT * FROM hw_disks ORDER BY pos'),
+  hwNics: db.prepare('SELECT * FROM hw_nics ORDER BY pos'),
 };
 
 // onas's own VMID: its bind mounts translate share paths (/srv/media) into host datasets.
@@ -69,6 +73,44 @@ function shareDataset(sharePath, mounts) {
     if ((sharePath === t || sharePath.startsWith(`${t}/`)) && (!best || t.length > best.target.length)) best = m;
   }
   return best?.dataset ?? null;
+}
+
+// Live hardware from the `hardware` collector; null until its first successful run.
+function buildHardware() {
+  const hw = q.hwHost.get();
+  if (!hw) return null;
+  return {
+    sampledAt: hw.sampled_at,
+    intervalS: hw.interval_s,
+    cpu: { tempC: hw.cpu_temp_c },
+    memory: q.hwMemory.all().map(m => ({ slot: m.slot, tempC: m.temp_c })),
+    disks: q.hwDisks.all().map(d => ({
+      name: d.name,
+      serial: d.serial,
+      kind: d.kind,
+      port: d.port,
+      slot: d.slot,
+      slotSource: d.slot_source,
+      readBps: d.read_bps,
+      writeBps: d.write_bps,
+      readIops: d.read_iops,
+      writeIops: d.write_iops,
+      busyPct: d.busy_pct,
+      tempC: d.temp_c,
+      tempAt: d.temp_at,
+      standby: d.standby == null ? null : Boolean(d.standby),
+    })),
+    nics: q.hwNics.all().map(n => ({
+      name: n.name,
+      slot: n.slot,
+      slotSource: n.slot_source,
+      kind: n.kind,
+      up: Boolean(n.up),
+      speedMbps: n.speed_mbps,
+      rxBps: n.rx_bps,
+      txBps: n.tx_bps,
+    })),
+  };
 }
 
 function buildState() {
@@ -89,6 +131,7 @@ function buildState() {
       uptimeSeconds: h.uptime || 0,
       timestamp: h.updated_at,
     } : null,
+    hardware: buildHardware(),
     guests: q.guests.all().map(g => ({
       vmid: g.vmid,
       name: g.name,

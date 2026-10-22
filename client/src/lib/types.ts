@@ -184,8 +184,49 @@ export interface CollectorStatus {
   via: string | null;
 }
 
+// Live hardware from the `hardware` collector (every 10 s). Rates are averaged over the
+// interval between the last two samples; a slot is a part key in the machine model
+// (client/src/viz/machine/types.ts).
+export interface HardwareDisk {
+  name: string;                 // sda, nvme1n1
+  serial: string;
+  kind: 'hdd' | 'nvme';
+  port: string;                 // ata-3, or the NVMe controller's PCI address 0000:68:00.0
+  slot: string | null;          // bay1..bay6, m2s1..m2s5
+  slotSource: 'config' | 'assumed'; // assumed: from SATA port / PCI order, not confirmed in /etc/onas/hardware.json
+  readBps: number;
+  writeBps: number;
+  readIops: number;
+  writeIops: number;
+  busyPct: number;              // share of the interval the device had I/O in flight, 0..100
+  tempC: number | null;         // NVMe: hwmon, live. HDD: smartctl -n standby, every few minutes
+  tempAt: string | null;        // when tempC was read
+  standby: boolean | null;      // HDD spun down (temperature not read, to avoid waking it)
+}
+
+export interface HardwareNic {
+  name: string;                 // enp101s0
+  slot: string | null;          // lan1, lan2, sfp1, sfp2
+  slotSource: 'config' | 'assumed';
+  kind: '2.5GbE' | '10GbE SFP+' | string;
+  up: boolean;                  // carrier
+  speedMbps: number | null;
+  rxBps: number;
+  txBps: number;
+}
+
+export interface HardwareState {
+  sampledAt: string;
+  intervalS: number;
+  cpu: { tempC: number | null };                       // k10temp Tctl
+  memory: Array<{ slot: string; tempC: number | null }>; // spd5118, ram1/ram2
+  disks: HardwareDisk[];
+  nics: HardwareNic[];
+}
+
 export interface DashboardState {
   host: HostHealth | null;
+  hardware: HardwareState | null;
   guests: Guest[];
   pools: Pool[];
   datasets: Dataset[];

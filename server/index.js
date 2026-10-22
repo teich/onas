@@ -10,7 +10,7 @@ const { buildState, readGuestsConfig, writeGuestsConfig } = require('./state');
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, '..', 'public');
 
-for (const name of ['pve', 'zfs', 'smb', 'mounts', 'history', 'disks', 'updates', 'maintenance']) {
+for (const name of ['pve', 'hardware', 'zfs', 'smb', 'mounts', 'history', 'disks', 'updates', 'maintenance']) {
   for (const def of require(`./collectors/${name}`)) scheduler.register(def);
 }
 
@@ -66,7 +66,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api/metrics', (req, res) => {
   const series = String(req.query.series || '');
   const hours = Math.min(24 * 90, Math.max(1, Number(req.query.hours) || 24));
-  if (!/^[a-z0-9.]+$/.test(series)) return res.status(400).json({ error: 'series required' });
+  if (!/^[A-Za-z0-9._-]+$/.test(series)) return res.status(400).json({ error: 'series required' });
   const since = Math.floor(Date.now() / 1000) - hours * 3600;
   const points = hours <= 6
     ? db.prepare('SELECT ts, value FROM metrics WHERE series = ? AND ts >= ? ORDER BY ts').all(series, since)
