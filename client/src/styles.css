@@ -344,3 +344,189 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .skeleton-page div { height: 120px; border-radius: var(--radius); background: linear-gradient(90deg, var(--surface) 0%, var(--raised) 50%, var(--surface) 100%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
 .skeleton-page div:nth-child(2) { height: 420px; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* ---------- machine ---------- */
+.machine { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (min-width: 1180px) { .machine { grid-template-columns: minmax(0, 1fr) 360px; } }
+
+.machine-stage {
+  position: relative;
+  height: clamp(420px, 64vh, 820px);
+  min-width: 0;
+  background: #000;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.machine-canvas { position: absolute; inset: 0; }
+.machine-scene-fill { width: 100%; height: 100%; }
+.machine-msg {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 24px; text-align: center; color: var(--ink-2); max-width: 520px; margin: 0 auto;
+}
+.machine-msg strong { color: var(--ink); font-weight: 600; }
+
+.machine-top {
+  position: absolute; z-index: 3; left: 12px; right: 12px; top: 12px;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap;
+  pointer-events: none;
+}
+.machine-top > * { pointer-events: auto; }
+.machine-lens { background: rgba(20, 20, 19, 0.74); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.machine-lens button { padding: 4px 14px; }
+.machine-actions { display: flex; gap: 6px; }
+.machine-btn {
+  background: rgba(20, 20, 19, 0.74); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  color: var(--ink-2); border-radius: 8px; padding: 5px 12px;
+}
+.machine-btn.on { background: rgba(255, 255, 255, 0.16); color: var(--ink); border-color: rgba(255, 255, 255, 0.24); }
+.machine-badge {
+  position: absolute; z-index: 3; left: 12px; top: 54px; padding: 3px 10px; border-radius: 999px;
+  background: rgba(20, 20, 19, 0.82); border: 1px solid var(--hair); font-size: 12px;
+}
+.machine-foot {
+  position: absolute; z-index: 3; left: 14px; right: 14px; bottom: 11px; display: flex; flex-direction: column; gap: 5px;
+  font-size: 11.5px; pointer-events: none; text-shadow: 0 1px 3px #000, 0 0 8px #000;
+}
+.machine-summary { color: var(--muted); }
+.machine-dev { color: var(--warning); }
+.machine-legend { display: flex; flex-wrap: wrap; gap: 3px 16px; align-items: center; color: var(--ink-2); }
+.machine-legend > span { display: inline-flex; align-items: center; }
+.machine-legend .swatch.ghost { background: rgba(240, 239, 236, 0.28); }
+.machine-legend .swatch.line { width: 16px; height: 3px; border-radius: 2px; }
+.heat-ramp { gap: 8px; }
+.heat-ramp i { display: block; width: 150px; height: 7px; border-radius: 4px; }
+.heat-ramp span { color: var(--muted); }
+
+/* labels pinned to parts of the scene */
+.machine-label-body {
+  font: 11px/1.3 var(--font); color: var(--ink-2); padding: 2px 7px; border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55); border: 1px solid var(--hair); font-variant-numeric: tabular-nums;
+}
+.machine-label-body b { color: var(--ink); font-weight: 600; }
+.machine-label.tone-warning .machine-label-body { color: var(--warning); border-color: rgba(250, 178, 25, 0.55); }
+.machine-label.tone-critical .machine-label-body { color: #ee6a6a; border-color: rgba(208, 59, 59, 0.7); }
+.machine-label.tone-warning .machine-label-body b, .machine-label.tone-critical .machine-label-body b { color: inherit; }
+
+/* slot list */
+.machine-side { min-width: 0; }
+.machine-side { scrollbar-width: thin; }
+.slot-list { display: flex; flex-direction: column; gap: 14px; }
+.slot-wait { padding: 0 2px; }
+.slot-group h3 { font-size: 11.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 6px 2px; }
+.slot-row {
+  display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center;
+  width: 100%; margin-bottom: 4px; padding: 7px 10px; text-align: left; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--hair-soft); white-space: normal;
+}
+.slot-row:hover:not(:disabled), .slot-row.hover { background: var(--raised); border-color: rgba(255, 255, 255, 0.2); }
+.slot-row.on { border-color: var(--accent); }
+.slot-row.idle { color: var(--muted); }
+.slot-row.idle .slot-name { color: var(--ink-2); }
+.slot-name { font-weight: 600; }
+.slot-main { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.slot-temp { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.slot-sub { grid-column: 2 / -1; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.slot-device { color: var(--muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot-live { display: inline-flex; align-items: center; gap: 8px; flex: none; font-size: 12px; font-variant-numeric: tabular-nums; }
+.slot-live .meter { width: 38px; min-width: 38px; }
+.slot-rate { display: inline-flex; gap: 8px; color: var(--ink-2); }
+.slot-rate i { font-style: normal; font-size: 11px; margin-right: 2px; }
+.pool-chip {
+  display: inline-flex; align-items: center; gap: 5px; line-height: 18px; padding: 0 8px 0 6px; border-radius: 999px;
+  font-size: 11.5px; background: rgba(255, 255, 255, 0.06); color: var(--ink-2);
+}
+.pool-chip i { width: 7px; height: 7px; border-radius: 2px; background: var(--pool, var(--ink-2)); }
+.pool-chip[data-none] i { background: transparent; border: 1px solid var(--muted); }
+.link-chip { font-size: 11.5px; line-height: 18px; padding: 0 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); color: var(--ink-2); }
+
+/* detail card */
+.mdetail { background: var(--surface); border: 1px solid var(--hair-soft); border-radius: var(--radius); padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.mdetail-head { display: flex; align-items: flex-start; gap: 10px; }
+.mdetail-head > div:first-child { flex: 1; min-width: 0; }
+.mdetail-head h3 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.mdetail-sub { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mdetail-status .status { white-space: normal; align-items: flex-start; }
+.mdetail-status .status i { padding-top: 3px; }
+.mnote { font-size: 12px; color: var(--ink-2); margin-top: 3px; }
+.mwarn { padding: 6px 9px; border-radius: 7px; background: rgba(250, 178, 25, 0.08); border: 1px solid rgba(250, 178, 25, 0.3); margin-top: 0; }
+.mfacts { display: flex; flex-direction: column; }
+.kv { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--hair-soft); }
+.kv:last-child { border-bottom: none; }
+.kv dt { color: var(--muted); font-size: 12px; padding-top: 1px; }
+.kv dd { min-width: 0; overflow-wrap: anywhere; }
+.msection { display: flex; flex-direction: column; gap: 8px; }
+.msection h4 { font-size: 11.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.mself { padding: 6px 9px; border-radius: 7px; background: rgba(255, 255, 255, 0.05); color: var(--ink-2); }
+.mdeps { display: flex; flex-direction: column; gap: 2px; }
+.mdeps .chips { margin-top: 0; }
+.mlink { align-self: flex-start; color: var(--ink-2); }
+.mlive { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.mlive > div { display: flex; flex-direction: column; min-width: 0; }
+.mlive strong { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mlive .muted { font-size: 11.5px; }
+.mspark svg { display: block; width: 100%; height: 54px; background: var(--sunken); border-radius: 6px; }
+.mspark-base { stroke: var(--axis); stroke-width: 1; }
+.mspark-legend { display: flex; flex-wrap: wrap; gap: 2px 14px; margin-top: 5px; font-size: 11.5px; color: var(--ink-2); }
+.mspark-legend i { display: inline-block; width: 8px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: 2px; }
+.mspark-legend b { font-weight: 400; color: var(--muted); }
+.mspark-empty { padding: 14px 0; text-align: center; background: var(--sunken); border-radius: 6px; }
+
+/* storage tab: the slot a drive sits in */
+.disk-dev-name { display: inline-flex; align-items: center; gap: 7px; }
+.slot-chip { font-family: var(--font); font-size: 10.5px; line-height: 16px; padding: 0 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); color: var(--ink-2); }
+.slot-chip:hover { background: rgba(255, 255, 255, 0.14); color: var(--ink); text-decoration: none; }
+
+@media (max-width: 820px) {
+  .mlive { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .machine-lens button { padding: 4px 11px; }
+}
+.machine-label-stem { display: none; }
+.machine-label[data-moved] .machine-label-hline { display: none; }
+.machine-label[data-moved] .machine-label-stem { display: block; border-left: 1px solid currentColor; }
+.machine-label[data-moved="down"] .machine-label-stem { border-bottom: 1px solid currentColor; }
+.machine-label[data-moved="up"] .machine-label-stem { border-top: 1px solid currentColor; }
+
+/* narrow screens: the six tabs scroll sideways instead of widening the page */
+@media (max-width: 700px) {
+  .topbar { gap: 14px; padding: 0 14px; }
+  .tabs { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs a { white-space: nowrap; }
+  .content { padding: 18px 14px 48px; }
+  .host-strip { padding: 10px 14px; gap: 12px 18px; }
+}
+
+/* no WebGPU (or the scene failed): the engine's message, centred; the list still works */
+.machine-stage .viz-error {
+  top: 50%; left: 50%; right: auto; transform: translate(-50%, -50%); width: min(520px, calc(100% - 48px));
+  text-align: center; font-family: var(--font); font-size: 13px; white-space: normal; z-index: 2;
+}
+.machine-stage .viz-error::after { content: 'The slot list and details still work.'; display: block; margin-top: 6px; color: var(--muted); }
+
+/* The Machine tab fills the window on desktop: the top bar and host strip take what they need
+   (they may wrap), the stage and the slot column share the rest and follow every resize, and the
+   column scrolls inside itself. Under ~420 px of stage the page scrolls instead. The narrow,
+   stacked layout keeps its fixed-height stage. */
+@media (min-width: 1180px) {
+  .app-fill { --fill-top: 18px; --fill-bottom: 24px; height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+  .app-fill > .topbar, .app-fill > .host-strip { flex: none; }
+  .app-fill > .content {
+    flex: 1 1 0;
+    min-height: calc(420px + var(--fill-top) + var(--fill-bottom));
+    width: 100%;
+    max-width: 2200px;
+    padding: var(--fill-top) 24px var(--fill-bottom);
+    display: flex;
+    flex-direction: column;
+  }
+  .app-fill .machine {
+    flex: 1 1 0;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 22vw, 440px);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .app-fill .machine-stage { height: auto; min-height: 420px; }
+  .app-fill .machine-side { height: auto; min-height: 0; overflow-y: auto; padding-right: 2px; }
+}

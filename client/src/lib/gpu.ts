@@ -64,8 +64,13 @@ export function upload(device: GPUDevice, buffer: GPUBuffer | null, data: Float3
 export interface Renderer {
   // Called with the canvas size in CSS pixels and the device pixel ratio.
   resize(width: number, height: number, dpr: number): void;
-  // Draw one frame. Return true to keep animating, false to sleep until invalidate().
-  frame(pass: GPURenderPassEncoder, timeSeconds: number): boolean;
+  // Draw one frame into a render pass on the canvas. Return true to keep animating, false to
+  // sleep until invalidate(). Implement this or encode().
+  frame?(pass: GPURenderPassEncoder, timeSeconds: number): boolean;
+  // Multi-pass alternative to frame(): record whatever passes you need (compute, offscreen
+  // targets, post-processing) and finish by writing to `canvasView`. When present it is used
+  // instead of frame(). Same return value.
+  encode?(encoder: GPUCommandEncoder, canvasView: GPUTextureView, timeSeconds: number): boolean;
   destroy?(): void;
 }
 
@@ -100,11 +105,18 @@ export function useGpuCanvas<R extends Renderer>(
       if (disposed || !current || !context || !device || !visible || document.hidden) return;
       if (canvas.width === 0 || canvas.height === 0) return;
       const encoder = device.createCommandEncoder();
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
-      });
-      const again = current.frame(pass, (performance.now() - start) / 1000);
-      pass.end();
+      const view = context.getCurrentTexture().createView();
+      const seconds = (performance.now() - start) / 1000;
+      let again = false;
+      if (current.encode) {
+        again = current.encode(encoder, view, seconds);
+      } else if (current.frame) {
+        const pass = encoder.beginRenderPass({
+          colorAttachments: [{ view, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
+        });
+        again = current.frame(pass, seconds);
+        pass.end();
+      }
       device.queue.submit([encoder.finish()]);
       if (again) raf = requestAnimationFrame(draw);
     };
