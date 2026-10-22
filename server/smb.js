@@ -104,6 +104,30 @@ async function readUsers() {
   });
 }
 
+// Current share connections from `smbstatus --json` (Samba 4.16+): one row per tree connect.
+async function readConnections() {
+  const r = await run('smbstatus --json');
+  if (r.exitCode !== 0) throw new Error(r.stderr.trim() || `smbstatus exit ${r.exitCode}`);
+  const status = JSON.parse(r.stdout);
+  const sessions = status.sessions || {};
+  const openByShare = {};
+  for (const file of Object.values(status.open_files || {})) {
+    const opens = Object.keys(file.opens || {}).length || 1;
+    openByShare[file.service_path] = (openByShare[file.service_path] || 0) + opens;
+  }
+  return Object.values(status.tcons || {}).map(tcon => {
+    const session = sessions[tcon.session_id] || {};
+    return {
+      share: tcon.service,
+      username: session.username || '',
+      machine: tcon.machine || session.remote_machine || '',
+      connectedAt: tcon.connected_at || null,
+      encryption: tcon.encryption?.cipher && tcon.encryption.cipher !== '-' ? tcon.encryption.cipher : '',
+      openFiles: openByShare[tcon.share_path || ''] || 0,
+    };
+  });
+}
+
 async function addUser(username, password) {
   const created = await run(`useradd -M -s /sbin/nologin -G nasusers ${username}`);
   if (created.exitCode !== 0) return created;
@@ -121,5 +145,5 @@ async function removeUser(username) {
 }
 
 module.exports = {
-  USERNAME_RE, readShares, validateShares, writeShares, readUsers, addUser, setPassword, removeUser,
+  USERNAME_RE, readShares, validateShares, writeShares, readUsers, readConnections, addUser, setPassword, removeUser,
 };

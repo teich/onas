@@ -1,4 +1,4 @@
-import type { DashboardState, Share } from './types';
+import type { DashboardState, HistoryMatrix, Share } from './types';
 
 async function send<T>(url: string, init: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -50,4 +50,22 @@ export function deleteGuest(vmid: number, confirm: string): Promise<{ ok: boolea
 
 export function createSnapshot(dataset: string, name: string) {
   return send('/api/snapshots', json('POST', { datasets: [dataset], name }));
+}
+
+export function destroySnapshot(snapshot: string) {
+  return send('/api/snapshots', json('DELETE', { snapshot }));
+}
+
+export function rollbackSnapshot(snapshot: string) {
+  return send('/api/snapshots/rollback', json('POST', { snapshot }));
+}
+
+export function setUserPassword(username: string, password: string) {
+  return send(`/api/users/${encodeURIComponent(username)}/password`, json('PUT', { password }));
+}
+
+export async function fetchHistory(metric: string, hours: number): Promise<HistoryMatrix> {
+  const res = await fetch(`/api/history?metric=${encodeURIComponent(metric)}&hours=${hours}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
 }

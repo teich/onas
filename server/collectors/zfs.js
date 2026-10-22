@@ -34,13 +34,21 @@ function num(value) {
 
 async function collectDatasets() {
   const out = await sshExec(
-    'zfs list -Hp -t filesystem,volume -o name,used,avail,refer,mountpoint,type,volsize; echo ---; ' +
+    'zfs list -Hp -t filesystem,volume -o name,used,avail,refer,mountpoint,type,volsize,' +
+    'usedbysnapshots,usedbydataset,usedbychildren,quota,compressratio; echo ---; ' +
     'zfs list -Hp -t snapshot -o name,used,refer,creation'
   );
   const [datasetPart, snapshotPart = ''] = out.split('\n---\n');
   const datasets = datasetPart.trim().split('\n').filter(Boolean).map(line => {
-    const [name, used, avail, refer, mountpoint, type, volsize] = line.split('\t');
-    return { name, used: num(used), avail: num(avail), refer: num(refer), mountpoint, type, volsize: num(volsize) };
+    const [name, used, avail, refer, mountpoint, type, volsize, bySnap, byDataset, byChildren, quota, ratio] = line.split('\t');
+    return {
+      name, used: num(used), avail: num(avail), refer: num(refer), mountpoint, type, volsize: num(volsize),
+      used_by_snapshots: num(bySnap),
+      used_by_dataset: num(byDataset),
+      used_by_children: num(byChildren),
+      quota: num(quota) || null, // 0 means no quota
+      compressratio: parseFloat(ratio) || null,
+    };
   });
   const snapshots = snapshotPart.trim().split('\n').filter(Boolean).map(line => {
     const [name, used, refer, creation] = line.split('\t');

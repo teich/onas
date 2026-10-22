@@ -10,7 +10,7 @@ const { buildState, readGuestsConfig, writeGuestsConfig } = require('./state');
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, '..', 'public');
 
-for (const name of ['pve', 'zfs', 'smb', 'disks', 'updates', 'maintenance']) {
+for (const name of ['pve', 'zfs', 'smb', 'mounts', 'history', 'disks', 'updates', 'maintenance']) {
   for (const def of require(`./collectors/${name}`)) scheduler.register(def);
 }
 
@@ -72,6 +72,42 @@ app.get('/api/metrics', (req, res) => {
     ? db.prepare('SELECT ts, value FROM metrics WHERE series = ? AND ts >= ? ORDER BY ts').all(series, since)
     : db.prepare('SELECT ts, avg AS value, max FROM metrics_5m WHERE series = ? AND ts >= ? ORDER BY ts').all(series, since);
   res.json({ series, hours, points });
+});
+
+// A metric for the host and every guest as one matrix, for the activity heatmap:
+// ?metric=cpu&hours=24. 5-minute buckets up to 2 days, 30-minute buckets beyond.
+const HISTORY_METRICS = new Set(['cpu', 'mem', 'netin', 'netout', 'psi_cpu', 'psi_io', 'psi_mem']);
+app.get('/api/history', (req, res) => {
+  const metric = String(req.query.metric || 'cpu');
+  if (!HISTORY_METRICS.has(metric)) return res.status(400).json({ error: `metric must be one of ${[...HISTORY_METRICS].join(', ')}` });
+  const hours = Math.min(24 * 30, Math.max(1, Number(req.query.hours) || 24));
+  const step = hours <= 48 ? 300 : 1800;
+  const now = Math.floor(Date.now() / 1000);
+  const end = now - (now % step);
+  const start = end - hours * 3600;
+  const buckets = [];
+  for (let ts = start; ts < end; ts += step) buckets.push(ts);
+  const rows = db.prepare(`
+    SELECT series, ts - (ts % $step) AS bucket, AVG(avg) AS value, MAX(max) AS peak
+    FROM metrics_5m
+    WHERE ts >= $start AND ts < $end AND (series = $host OR (series LIKE 'guest.%' AND series LIKE $suffix))
+    GROUP BY series, bucket
+  `).all({ step, start, end, host: `host.${metric}`, suffix: `%.${metric}` });
+  const index = new Map(buckets.map((ts, i) => [ts, i]));
+  const bySeries = new Map();
+  let max = 0;
+  for (const row of rows) {
+    const id = row.series === `host.${metric}` ? 'host' : row.series.split('.')[1];
+    if (!bySeries.has(id)) bySeries.set(id, new Array(buckets.length).fill(null));
+    const i = index.get(row.bucket);
+    if (i === undefined) continue;
+    bySeries.get(id)[i] = row.value;
+    max = Math.max(max, row.value);
+  }
+  res.json({
+    metric, hours, step, start, end, max,
+    series: [...bySeries.entries()].map(([id, values]) => ({ id, values })),
+  });
 });
 
 app.use('/api/guests', require('./routes/guests'));

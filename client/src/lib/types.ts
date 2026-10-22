@@ -33,6 +33,41 @@ export interface Dataset {
   mountpoint: string;
   type: string;
   volsize: number | null;
+  usedBySnapshots: number;
+  usedByDataset: number;
+  usedByChildren: number;
+  quota: number | null;
+  compressratio: number | null;
+}
+
+export interface GuestMount {
+  vmid: number;
+  slot: string;
+  kind: 'rootfs' | 'bind' | 'disk';
+  source: string;
+  target: string | null;
+  dataset: string | null;
+  readOnly: boolean;
+  size: string | null;
+}
+
+export interface SmbConnection {
+  share: string;
+  username: string;
+  machine: string;
+  connectedAt: string | null;
+  encryption: string;
+  openFiles: number;
+}
+
+export interface HistoryMatrix {
+  metric: string;
+  hours: number;
+  step: number;
+  start: number;
+  end: number;
+  max: number;
+  series: Array<{ id: string; values: Array<number | null> }>;
 }
 
 export interface Snapshot {
@@ -79,6 +114,7 @@ export interface Disk {
 export interface Share {
   name: string;
   path: string;
+  dataset?: string | null;
   comment: string;
   readOnly: boolean;
   guestOk: boolean;
@@ -153,10 +189,12 @@ export interface DashboardState {
   guests: Guest[];
   pools: Pool[];
   datasets: Dataset[];
+  mounts: GuestMount[];
   snapshots: Snapshot[];
   disks: Disk[];
   shares: Share[];
   smbUsers: SmbUser[];
+  smbConnections: SmbConnection[];
   updates: UpdatesInfo;
   activity: ActivityEntry[];
   guestsConfig: GuestsConfig;

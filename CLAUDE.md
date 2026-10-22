@@ -26,7 +26,7 @@ If a site gives "connection refused", check Caddy before the backend. A 502 mean
 
 ## The onas app
 
-The dashboard in this repo runs on LXC 119 as `onas.service` (`/opt/onas`, state in `/var/lib/onas/onas.db`). Deploy with `ops/guests/119-onas/deploy`. When it looks wrong, `curl http://192.168.2.189:3000/api/health` names any collector that's failing and why. See [README.md](README.md).
+The dashboard in this repo runs at https://onas.giraffe-gamma.ts.net (Tailscale; plain http://192.168.2.189:3000 works but can't draw the WebGPU views) on LXC 119 as `onas.service` (`/opt/onas`, state in `/var/lib/onas/onas.db`). Deploy with `ops/guests/119-onas/deploy`. When it looks wrong, `curl http://192.168.2.189:3000/api/health` names any collector that's failing and why. See [README.md](README.md).
 
 ## Customizations live in `ops/`
 

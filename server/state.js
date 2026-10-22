@@ -54,10 +54,26 @@ const q = {
   shares: db.prepare('SELECT * FROM shares ORDER BY name'),
   users: db.prepare('SELECT * FROM smb_users ORDER BY username'),
   actions: db.prepare('SELECT * FROM actions ORDER BY id DESC LIMIT 30'),
+  mounts: db.prepare('SELECT * FROM guest_mounts ORDER BY vmid, slot'),
+  connections: db.prepare('SELECT * FROM smb_connections ORDER BY share, connected_at'),
 };
+
+// onas's own VMID: its bind mounts translate share paths (/srv/media) into host datasets.
+const SELF_VMID = Number(process.env.ONAS_VMID || 119);
+
+function shareDataset(sharePath, mounts) {
+  let best = null;
+  for (const m of mounts) {
+    if (m.vmid !== SELF_VMID || !m.target || !m.dataset) continue;
+    const t = m.target.replace(/\/+$/, '');
+    if ((sharePath === t || sharePath.startsWith(`${t}/`)) && (!best || t.length > best.target.length)) best = m;
+  }
+  return best?.dataset ?? null;
+}
 
 function buildState() {
   const h = q.host.get();
+  const mounts = q.mounts.all();
   const collectors = scheduler.status();
   const updates = q.updates.all();
   const count = kind => updates.filter(u => u.kind === kind).length;
@@ -104,7 +120,30 @@ function buildState() {
       status: p.status,
       vdevs: JSON.parse(p.vdevs || '[]'),
     })),
-    datasets: q.datasets.all(),
+    datasets: q.datasets.all().map(d => ({
+      name: d.name,
+      used: d.used,
+      avail: d.avail,
+      refer: d.refer,
+      mountpoint: d.mountpoint,
+      type: d.type,
+      volsize: d.volsize,
+      usedBySnapshots: d.used_by_snapshots ?? 0,
+      usedByDataset: d.used_by_dataset ?? 0,
+      usedByChildren: d.used_by_children ?? 0,
+      quota: d.quota,
+      compressratio: d.compressratio,
+    })),
+    mounts: mounts.map(m => ({
+      vmid: m.vmid,
+      slot: m.slot,
+      kind: m.kind,
+      source: m.source,
+      target: m.target,
+      dataset: m.dataset,
+      readOnly: Boolean(m.read_only),
+      size: m.size,
+    })),
     snapshots: q.snapshots.all().map(s => ({
       name: s.name,
       dataset: s.dataset,
@@ -129,6 +168,7 @@ function buildState() {
     shares: q.shares.all().map(s => ({
       name: s.name,
       path: s.path,
+      dataset: shareDataset(s.path, mounts),
       comment: s.comment,
       readOnly: Boolean(s.read_only),
       guestOk: Boolean(s.guest_ok),
@@ -136,6 +176,14 @@ function buildState() {
       inheritPermissions: Boolean(s.inherit_permissions),
     })),
     smbUsers: q.users.all().map(u => ({ username: u.username, fullName: u.full_name })),
+    smbConnections: q.connections.all().map(c => ({
+      share: c.share,
+      username: c.username,
+      machine: c.machine,
+      connectedAt: c.connected_at,
+      encryption: c.encryption,
+      openFiles: c.open_files,
+    })),
     updates: {
       count: updates.length,
       patches: count('patch'),
