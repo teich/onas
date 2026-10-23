@@ -33,12 +33,12 @@ IP "dhcp → x" means the address isn't pinned (it may be a DHCP reservation, **
 | 111 | uptimekuma | dhcp → .115 | Uptime Kuma (:3001) | Homepage links to the DHCP IP |
 | 112 | proxmox-backup-server | 192.168.2.9 | PBS 4.2.8 (upgraded 2026-10-21); datastore `bulk-backups` = `/bulk/backups/pbs`; 128 GB S3 cache at `/mnt/s3-cache` | Daily GC + prune. No verify job yet. B2 offsite datastore in progress, see `ops/guests/112-proxmox-backup-server` |
 | 113 | aac-external-apps | VLAN5 | **stopped**. Abandoned Docker host from 2025-10-31; only `hello-world` was ever run | Cruft |
-| 114 | patchmon | dhcp → .122 | PatchMon server (:3000) | Recreated 2026-10-21 08:36 |
+| 114 | patchmon | dhcp reserved → .122 | PatchMon server (:3000) | Recreated 2026-10-21 08:36 |
 | 115 | 2core | 192.168.2.6 | In development: alternative UI for the property's Tucor irrigation controllers. Docker `/opt/2core` (:8787 on localhost; reached over Tailscale) | Code in `~/src` and GitHub |
 | 116 | personal-windows (VM) | — | Windows 11, **stopped** | EFI disk lacks the 2023 Secure Boot certs (nightly backup warning) |
-| 117 | gamm | dhcp → .218 | **AAC** Google Ads MCP gateway, `gamm.grouse-crested.ts.net` | Code `~/src/aac/gamm` |
+| 117 | gamm | VLAN5 dhcp → 192.168.5.232 | **AAC** Google Ads MCP gateway, tailnet-only at `gamm.grouse-crested.ts.net` via tailscale serve | Code `~/src/aac/gamm`. Moved from the LAN (.218) to VLAN 5 on 2026-10-22 (snapshot `pre-vlan5`). Its PatchMon agent reports through the AAC → PatchMon firewall policy |
 | 119 | onas | dhcp → .189 | Samba shares (media, backups, photos, videos, roms) + this dashboard (:3000) | Customized, see `ops/guests/119-onas` (Node 24 from NodeSource, `onas.service`, 2026-10-22) |
-| 122 | books | VLAN5 dhcp → 192.168.5.149 | **AAC** SlowBooks Pro (Docker prod stack: app + Postgres 17), tailnet-only at `books.grouse-crested.ts.net` via tailscale serve | Created 2026-10-22, see `ops/guests/122-books` |
+| 122 | books | VLAN5 dhcp → 192.168.5.149 | **AAC** SlowBooks Pro (Docker prod stack: app + Postgres 17), tailnet-only at `books.grouse-crested.ts.net` via tailscale serve | Created 2026-10-22, see `ops/guests/122-books`. No PatchMon agent yet |
 | 301 | acc-external-apps (VM) | VLAN5 | **stopped**. Second try at 113 (2025-11-12): Docker + virtiofs mount of `/fast/apps`; only `hello-world` was ever run | Cruft. Name has an "acc" typo |
 
 Removed 2026-10-21 09:05 by oren@pve (cruft, confirmed): 120 ollama, 121 n8n. The 2026-10-20 PBS backups of both still exist.
@@ -63,7 +63,7 @@ Removed 2026-10-21 09:05 by oren@pve (cruft, confirmed): 120 ollama, 121 n8n. Th
 
 ## Patch state
 
-Patching is done from PatchMon (http://192.168.2.122:3000): open a host and start a patch run, which runs apt on that guest through its agent. Before 2026-10-21 most guests had never been updated since install. On 2026-10-21 PatchMon patched every agent guest (about 700 packages, mostly Debian security fixes) after `pre-catchup` snapshots (`pre-patchmon-test` on 2core), and all services came back. Only patchmon (114) itself had updates left (3). The arr Docker images were updated by hand the same day (PatchMon only reports Docker updates; pull them on the arr guest). Since 2026-10-21 every running LXC installs Debian security updates automatically each day (`ops/common/security-updates`); everything else waits for a PatchMon "patch all" run. The PatchMon agent is missing on dash (105) and cloudflared-aac (109).
+Patching is done from PatchMon (http://192.168.2.122:3000): open a host and start a patch run, which runs apt on that guest through its agent. Before 2026-10-21 most guests had never been updated since install. On 2026-10-21 PatchMon patched every agent guest (about 700 packages, mostly Debian security fixes) after `pre-catchup` snapshots (`pre-patchmon-test` on 2core), and all services came back. Only patchmon (114) itself had updates left (3). The arr Docker images were updated by hand the same day (PatchMon only reports Docker updates; pull them on the arr guest). Since 2026-10-21 every running LXC installs Debian security updates automatically each day (`ops/common/security-updates`); everything else waits for a PatchMon "patch all" run. The PatchMon agent is missing on dash (105), cloudflared-aac (109) and books (122). VLAN 5 is isolated from the LAN, so on 2026-10-22 a UniFi firewall policy "Allow AAC to PatchMon" (zone AAC → Internal, TCP 192.168.2.122:3000 only, index 10000, ahead of the built-in "Isolated Networks" block) was added to let agents on VLAN 5 check in. gamm (117) reports again; other LAN ports stay blocked from VLAN 5.
 
 ## Network
 
@@ -73,6 +73,7 @@ Checked with `ops/bin/unifi` on 2026-10-21.
 - **Networks**: Default 192.168.2.0/24, DHCP pool .50–.254. AAC, VLAN 5, 192.168.5.0/24, DHCP pool .6–.254.
 - **UniFi devices**: switches in Oren Office, Utility Closet, Garage and Pool House; U7 APs in Oren Office, Kitchen Attic, Garage and Pool House (outdoor).
 - **Static guest IPs** (.2 host, .4, .5, .6, .9, .13, .20) sit below the DHCP pool, so DHCP never hands them out.
+- **Tailnets**: two. `teich.net` (giraffe-gamma.ts.net) is personal and holds WTR and the home guests. `asphaltanchors.com` (grouse-crested.ts.net) is AAC and holds dash, gamm, books (all `tag:server`) and quickbooks. AAC work doesn't go through WTR: dash, gamm and books run Tailscale SSH (`tailscale set --ssh`, enabled on gamm and books 2026-10-22), so `ssh root@gamm` works from the Mac on the AAC tailnet. The AAC policy already had an SSH rule that lets `oren@asphaltanchors.com` in as root. `pct exec` on WTR is for host-level work only. Switch the Mac with `tailscale switch`.
 
 ### Guest addressing
 
@@ -81,12 +82,12 @@ Checked with `ops/bin/unifi` on 2026-10-21.
 | arr 104 | .119 | DHCP, reserved |
 | gatey 107 | .93 | DHCP, reserved (2026-10-21) |
 | haos VM 100 | .3 | Static inside HAOS |
-| patchmon 114 | .122 | DHCP, reserved 2026-10-21. Every PatchMon agent points at http://192.168.2.122:3000 |
+| patchmon 114 | .122 | DHCP, reserved 2026-10-21 (Default network set on the reservation 2026-10-22). Every PatchMon agent, and the AAC → PatchMon firewall policy, points at http://192.168.2.122:3000 |
 | uptimekuma 111 | .115 | DHCP, not reserved (Homepage links to it) |
 | onas 119 | .189 | DHCP, not reserved (Samba shares) |
 | quickbooks VM 108 | 192.168.5.221 | DHCP, not reserved |
-| dash 105, cloudflared-aac 109 | 192.168.5.30, .5.57 | DHCP, not reserved (outbound tunnel / Tailscale only, so a change is harmless) |
-| cloudflared-teich 106, gamm 117 | .181, .218 | DHCP, not reserved (harmless) |
+| dash 105, cloudflared-aac 109, gamm 117 | 192.168.5.30, .5.57, .5.232 | DHCP, not reserved (outbound tunnel / Tailscale only, so a change is harmless) |
+| cloudflared-teich 106 | .181 | DHCP, not reserved (harmless) |
 | books 122 | 192.168.5.149 | DHCP, not reserved (Tailscale only, so a change is harmless) |
 
 ### Reservation cleanup (2026-10-21)
