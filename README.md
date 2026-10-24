@@ -17,6 +17,7 @@ collectors (scheduled) ──▶ SQLite /var/lib/onas/onas.db ──▶ /api/sta
 - **History**: `metrics` keeps 48 h of 10-second samples, `metrics_5m` 90 days of 5-minute averages. `/api/metrics?series=host.cpu&hours=24`. The hardware series (`disk.<serial>.{read,write,busy,temp}`, `nic.<name>.{rx,tx}`, `cpu.temp`) have no Proxmox RRD data, so `maintenance` averages them into `metrics_5m` itself.
 - **Hardware slots**: the `hardware` collector assumes which physical slot each disk and NIC is in (SATA port N is bay N; M.2 drives and NICs by PCI order; the defaults are at the top of `collectors/hardware.js`) and marks it `slotSource: "assumed"`. `/etc/onas/hardware.json`, `{ "slots": { "<disk serial or NIC name>": "<slot key>" } }`, overrides that (`"config"`). HDD temperatures come from `smartctl -n standby`, at most every 5 minutes and only for a drive that has done I/O since its last read, so a spun-down drive is not woken and SMART polling does not keep an idle drive from sleeping; an idle drive keeps its last temperature, with the time it was read.
 - `/api/health` returns 503 and lists stale collectors when any has missed three intervals.
+- **Front LCD**: `/api/lcd/frame` is the picture for WTR's physical front screen, 240 x 94 RGB drawn by the same `drawLcd()` (`client/src/lib/lcd.ts`) as the Machine view's virtual one. `npm run build:lcd` in `client/` bundles it for Node as `server/lcd-render.cjs` (deploy does this). `wtr-lcd` on WTR fetches it once a second: see [ops/host](ops/host/README.md).
 
 ```
 server/
@@ -27,6 +28,7 @@ server/
   collectors/     one module per source
   routes/         guests, storage (ZFS snapshots), smb
   state.js        builds the dashboard state from the database
+  lcd.js          the front LCD frame (renders client/src/lib/lcd.ts)
 client/           Vite + React + TypeScript, built to public/
   src/viz/machine/  the Machine view's WebGPU point-cloud engine; types.ts is the model format
   public/wtr-max/   the point cloud of WTR itself, exported by model/wtr-max/build.py
