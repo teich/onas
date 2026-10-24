@@ -1,0 +1,72 @@
+# Open Wearables production stack, from the docs' baseline (openwearables.io/docs/deployment/docker)
+# with the published images pinned. Secrets and settings come from /etc/openwearables/env.
+# Upgrade by bumping OW_VERSION below, then `wearables-compose pull && wearables-compose up -d`.
+x-backend: &backend
+  image: themomentum/open-wearables-backend:${OW_VERSION:-0.10.0}
+  env_file:
+    - /etc/openwearables/env
+  environment:
+    - DB_HOST=db
+    - REDIS_HOST=redis
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ${DB_NAME:-open-wearables}
+      POSTGRES_USER: ${DB_USER:-open-wearables}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in /etc/openwearables/env}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:8
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  app:
+    <<: *backend
+    command: scripts/start/app.sh
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  celery-worker:
+    <<: *backend
+    command: scripts/start/worker.sh
+    depends_on:
+      - app
+
+  celery-beat:
+    <<: *backend
+    command: scripts/start/beat.sh
+    depends_on:
+      - app
+
+  frontend:
+    image: themomentum/open-wearables-frontend:${OW_VERSION:-0.10.0}
+    environment:
+      - VITE_API_URL=${VITE_API_URL:?Set VITE_API_URL in /etc/openwearables/env}
+      - API_URL=http://app:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

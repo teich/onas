@@ -21,7 +21,7 @@ IP "dhcp → x" means the address isn't pinned (it may be a DHCP reservation, **
 | ID | Name | IP | What it is | Notes |
 |----|------|----|------------|-------|
 | 100 | haos (VM) | ? | Home Assistant OS | 2 c / 4 G |
-| 101 | caddy | 192.168.2.5 | TLS + reverse proxy for `*.teich.network` (home, evcc, immich) | Customized, see `ops/guests/101-caddy` |
+| 101 | caddy | 192.168.2.5 | TLS + reverse proxy for `*.teich.network` (home, evcc, immich, wearables) | Customized, see `ops/guests/101-caddy` |
 | 102 | homepage | 192.168.2.4 | gethomepage dashboard (:3000), home.teich.network. Config is managed in `ops/guests/102-homepage`; secrets live in `/opt/homepage/.env` | Mounts host `/`, `/bulk` and `/fast` read-only (for disk widgets?) |
 | 103 | immich | 192.168.2.13 | Immich 3.3.4 (bare-metal install, Postgres 16, Redis) | Photos from `/bulk/photos`. Also on Tailscale. 12 cores |
 | 104 | arr | dhcp → .119 | Docker: Jellyfin, Sonarr, Radarr, SABnzbd, qBittorrent, Audiobookshelf, Booklore (`grimmory` image), MariaDB | `/bulk/media`, `/fast/apps`; iGPU passthrough; Tailscale |
@@ -40,6 +40,7 @@ IP "dhcp → x" means the address isn't pinned (it may be a DHCP reservation, **
 | 117 | gamm | VLAN5 dhcp → 192.168.5.232 | **AAC** Google Ads MCP gateway, tailnet-only at `gamm.grouse-crested.ts.net` via tailscale serve | Code `~/src/aac/gamm`. Moved from the LAN (.218) to VLAN 5 on 2026-10-22 (snapshot `pre-vlan5`). Its PatchMon agent reports through the AAC → PatchMon firewall policy |
 | 119 | onas | dhcp → .189 | Samba shares (media, backups, photos, videos, roms) + this dashboard (:3000) | Customized, see `ops/guests/119-onas` (Node 24 from NodeSource, `onas.service`, 2026-10-22) |
 | 122 | books | VLAN5 dhcp → 192.168.5.149 | **AAC** SlowBooks Pro (Docker prod stack: app + Postgres 17), tailnet-only at `books.grouse-crested.ts.net` via tailscale serve | Created 2026-10-22, see `ops/guests/122-books`. No PatchMon agent yet |
+| 123 | wearables | 192.168.2.14 | Open Wearables 0.10.0 (Docker, published images: API, Celery, Postgres 18, Redis, portal). wearables.teich.network (portal) and wearables-api.teich.network (API) via Caddy | Created 2026-10-24, see `ops/guests/123-wearables`. No public URL, so provider webhooks can't reach it (pull sync only). No PatchMon agent yet |
 | 301 | acc-external-apps (VM) | VLAN5 | **stopped**. Second try at 113 (2025-11-12): Docker + virtiofs mount of `/fast/apps`; only `hello-world` was ever run | Cruft. Name has an "acc" typo |
 
 Removed 2026-10-21 09:05 by oren@pve (cruft, confirmed): 120 ollama, 121 n8n. The 2026-10-20 PBS backups of both still exist.
@@ -64,7 +65,7 @@ Removed 2026-10-21 09:05 by oren@pve (cruft, confirmed): 120 ollama, 121 n8n. Th
 
 ## Patch state
 
-Patching is done from PatchMon (http://192.168.2.122:3000): open a host and start a patch run, which runs apt on that guest through its agent. Before 2026-10-21 most guests had never been updated since install. On 2026-10-21 PatchMon patched every agent guest (about 700 packages, mostly Debian security fixes) after `pre-catchup` snapshots (`pre-patchmon-test` on 2core), and all services came back. Only patchmon (114) itself had updates left (3). The arr Docker images were updated by hand the same day (PatchMon only reports Docker updates; pull them on the arr guest). Since 2026-10-21 every running LXC installs Debian security updates automatically each day (`ops/common/security-updates`); everything else waits for a PatchMon "patch all" run. The PatchMon agent is missing on dash (105), cloudflared-aac (109) and books (122). VLAN 5 is isolated from the LAN, so on 2026-10-22 a UniFi firewall policy "Allow AAC to PatchMon" (zone AAC → Internal, TCP 192.168.2.122:3000 only, index 10000, ahead of the built-in "Isolated Networks" block) was added to let agents on VLAN 5 check in. gamm (117) reports again; other LAN ports stay blocked from VLAN 5.
+Patching is done from PatchMon (http://192.168.2.122:3000): open a host and start a patch run, which runs apt on that guest through its agent. Before 2026-10-21 most guests had never been updated since install. On 2026-10-21 PatchMon patched every agent guest (about 700 packages, mostly Debian security fixes) after `pre-catchup` snapshots (`pre-patchmon-test` on 2core), and all services came back. Only patchmon (114) itself had updates left (3). The arr Docker images were updated by hand the same day (PatchMon only reports Docker updates; pull them on the arr guest). Since 2026-10-21 every running LXC installs Debian security updates automatically each day (`ops/common/security-updates`); everything else waits for a PatchMon "patch all" run. The PatchMon agent is missing on dash (105), cloudflared-aac (109), books (122) and wearables (123). VLAN 5 is isolated from the LAN, so on 2026-10-22 a UniFi firewall policy "Allow AAC to PatchMon" (zone AAC → Internal, TCP 192.168.2.122:3000 only, index 10000, ahead of the built-in "Isolated Networks" block) was added to let agents on VLAN 5 check in. gamm (117) reports again; other LAN ports stay blocked from VLAN 5.
 
 ## Network
 
@@ -73,7 +74,7 @@ Checked with `ops/bin/unifi` on 2026-10-21.
 - **Gateway**: UniFi Cloud Gateway Fiber "Bennett-Valley" at 192.168.2.1 (BV = Bennett Valley). WANs: Comcast (public 73.158.57.90) and Starlink.
 - **Networks**: Default 192.168.2.0/24, DHCP pool .50–.254. AAC, VLAN 5, 192.168.5.0/24, DHCP pool .6–.254.
 - **UniFi devices**: switches in Oren Office, Utility Closet, Garage and Pool House; U7 APs in Oren Office, Kitchen Attic, Garage and Pool House (outdoor).
-- **Static guest IPs** (.2 host, .4, .5, .6, .9, .13, .20) sit below the DHCP pool, so DHCP never hands them out.
+- **Static guest IPs** (.2 host, .4, .5, .6, .9, .13, .14, .20) sit below the DHCP pool, so DHCP never hands them out. Two unlisted devices also answer below the pool: .7 (MAC 3c:8a:1f:0d:2c:1b) and .21 (dc:4f:22:5e:87:ce), seen 2026-10-24 **?**
 - **Tailnets**: two. `teich.net` (giraffe-gamma.ts.net) is personal and holds WTR and the home guests. `asphaltanchors.com` (grouse-crested.ts.net) is AAC and holds dash, gamm, books (all `tag:server`) and quickbooks. AAC work doesn't go through WTR: dash, gamm and books run Tailscale SSH (`tailscale set --ssh`, enabled on gamm and books 2026-10-22), so `ssh root@gamm` works from the Mac on the AAC tailnet. The AAC policy already had an SSH rule that lets `oren@asphaltanchors.com` in as root. `pct exec` on WTR is for host-level work only. Switch the Mac with `tailscale switch`.
 
 ### Guest addressing

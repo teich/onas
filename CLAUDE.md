@@ -21,6 +21,7 @@ DNS points `*.teich.network` at **192.168.2.5 = LXC 101 `caddy`**, which termina
 | home / homepage.teich.network | LXC 102 `homepage` (192.168.2.4) |
 | evcc.teich.network | LXC 110 `evcc` (192.168.2.20:7070) |
 | immich.teich.network | LXC 103 `immich` (192.168.2.13) |
+| wearables / wearables-api.teich.network | LXC 123 `wearables` (192.168.2.14:3000 / :8000) |
 
 If a site gives "connection refused", check Caddy before the backend. A 502 means Caddy is fine and the backend is down.
 
