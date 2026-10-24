@@ -3,7 +3,7 @@
 # ops/host; see ops/host/README.md.
 #
 # Once a second: fetch the frame onas draws (GET /api/lcd/frame, 240 x 94 RGB, the same drawLcd()
-# as the Machine view), draw each dot as a 3 x 3 pixel square with a 1-pixel gap, and send the
+# as the Machine view), draw each dot as a solid 4 x 4 square with its colour lifted, and send the
 # panel only the parts that changed. When onas doesn't answer, draw a smaller panel from local
 # sensors with the reason in the footer, so the screen never freezes on old numbers.
 #
@@ -113,11 +113,23 @@ class Panel:
         return len(changed)
 
 
-# 240 x 94 RGB888 -> 960 x 376 RGB565: each dot a 3 x 3 square, black between dots.
+# The panel's backlight is fixed and dim next to a monitor, so colours are lifted on the way out:
+# every lit colour gets a gamma of LIFT per channel (#898781 grey -> #b0aea9), while the
+# background, track and rule colours (no channel above DARK) stay as they are. onas's Machine
+# view is unaffected.
+LIFT, DARK = 0.6, 0x30
+
+
+def lift(r, g, b):
+    if max(r, g, b) <= DARK:
+        return r, g, b
+    return tuple(round(255 * (v / 255) ** LIFT) for v in (r, g, b))
+
+
+# 240 x 94 RGB888 -> 960 x 376 RGB565: each dot a solid 4 x 4 square (a gap between dots would
+# black out nearly half of every lit dot), colours lifted for the panel.
 def expand(rgb):
-    gap = b'\x00\x00'
     dots = {}
-    blank = gap * WIDTH
     lines = []
     for y in range(ROWS):
         row = rgb[y * COLS * 3:(y + 1) * COLS * 3]
@@ -126,12 +138,11 @@ def expand(rgb):
             key = row[x:x + 3]
             dot = dots.get(key)
             if dot is None:
-                r, g, b = key
+                r, g, b = lift(*key)
                 px = (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)).to_bytes(2, 'little')
-                dot = dots[key] = px * 3 + gap
+                dot = dots[key] = px * DOT
             parts.append(dot)
-        line = b''.join(parts)
-        lines.append(line * 3 + blank)
+        lines.append(b''.join(parts) * DOT)
     return b''.join(lines)
 
 
