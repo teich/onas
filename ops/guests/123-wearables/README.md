@@ -18,6 +18,17 @@ Both go through Caddy (101), so they work on the LAN and over the tailnet. Debia
 
 - **`files/etc/openwearables/compose.yml`** (2026-10-24): the baseline compose with a shared backend anchor, the version pinned, and the env file moved to `/etc/openwearables/env`.
 - **Caddy routes** for `wearables` and `wearables-api` were added to the Caddyfile on 101 (backup `Caddyfile.bak-2026-10-24`). The Caddyfile isn't tracked in ops yet.
+- **Our own backend image** (2026-10-24), so we can add a Tonal provider. `wearables-build` clones upstream at `OW_VERSION`, applies `files/etc/openwearables/patches/*.patch` in order with `git am`, and builds `local/open-wearables-backend:<version>-onas`; the compose file runs that with `pull_policy: never`. The frontend stays the published image. A patch that stops applying fails the build, so nothing is dropped silently. The source of the patch is `~/src/open-wearables`, branch `teich/tonal` (from tag 0.10.0); regenerate with `git format-patch 0.10.0..teich/tonal -o files/etc/openwearables/patches` (use the current upstream tag) after changing it. `ops/bin/push` only adds and overwrites, so delete a renamed or dropped patch on the guest too, or the build will apply it twice.
+
+## Tonal
+
+Added 2026-10-24 at Oren's request. Tonal has no official API, so this uses the unofficial one documented by [tonal-api](https://github.com/danmarai/tonal-api) and [toneget](https://github.com/curlrequests/toneget). It can break whenever Tonal changes its app. Oren chose a native provider over a sidecar, and wanted it to stay out of Open Wearables' own code as much as possible: everything is in `backend/app/services/providers/tonal/`, and outside it only the provider and score-category enums, the factory, the API router list (one line, for the sign-in form) and an icon change. Project notes are in Notion: Personal projects → Tonal connector for Open Wearables.
+
+- **What it syncs** on the normal hourly pull: each Tonal workout (title as `label`, heart rate and calories from the Apple Watch pairing, per-movement sets with weight, reps, 1RM, power and ROM in `segments`, fetched with `include=segments`), and the strength score history as health scores, category `strength`, provider `tonal`, linked to the workout that changed them.
+- **Strength score `value` is the overall score ÷ 10** (`qualifier` = `x10`), because `health_score.value` is numeric(6,3) and Tonal scores pass 1,000. `components` holds the real overall, upper, lower and core scores. Oren's choice, to avoid a schema migration.
+- **Connecting, per person** (2026-10-24, so Oren's wife can connect her own Tonal): open the user's pairing page, `https://wearables.teich.network/users/<ow-user-id>/pair`, and choose Tonal. Tonal's Auth0 only accepts its own app's redirect, so instead of Tonal's login page the person gets our form (`/api/v1/oauth/tonal/signin` on the API, `tonal/signin.py`). It takes the Tonal email and password, or sends an email code if the password is left empty, signs in with Tonal once, and hands the tokens to Open Wearables' normal callback under a one-time code. Only the tokens are kept, never the password. The callback queues its usual 90-day backfill; ours queues 400 days five minutes later, because a second pull of the same account while one is running is skipped.
+- **Fallback from a shell**, e.g. to repair a revoked connection: `docker exec -it openwearables-app-1 python -m app.services.providers.tonal.connect <ow-user-id> [--days N]` asks for the same sign-in in the terminal. Tonal rotates the refresh token on every refresh, so a connection that stops refreshing needs a fresh sign-in either way.
+- The same workouts also arrive from Apple Health (source "Tonal", provider apple) with only duration and calories. Provider priority decides which one summaries use.
 
 ## Providers
 
@@ -35,7 +46,7 @@ Each provider needs a developer app with its client ID/secret in the env file an
 ssh root@192.168.2.2 "pct exec 123 -- sh -c 'docker exec openwearables-db-1 pg_dump -U open-wearables open-wearables | gzip > /root/pre-upgrade.sql.gz'"
 ```
 
-Then bump `OW_VERSION` in `/etc/openwearables/env` and the default in `compose.yml`, `ops/bin/push 123-wearables`, and `wearables-compose pull && wearables-compose up -d`. The app migrates on start.
+Then bump `OW_VERSION` in `/etc/openwearables/env` and the default in `compose.yml`, `ops/bin/push 123-wearables`, then `wearables-build && wearables-compose pull && wearables-compose up -d`. The app migrates on start. If `wearables-build` stops at `git am`, rebase `teich/tonal` in `~/src/open-wearables` onto the new tag, run the Tonal tests (`uv run pytest tests/providers/tonal tests/providers/test_provider_coverage.py`), regenerate the patch and push again.
 
 ## Backups
 

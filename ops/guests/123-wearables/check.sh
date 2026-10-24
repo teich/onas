@@ -11,5 +11,8 @@ done
 curl -sf http://127.0.0.1:8000/ | grep -q 'Server is running' || { echo "API on :8000 not answering"; fail=1; }
 code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/)
 case "$code" in 2*|3*) ;; *) echo "portal on :3000 returned $code"; fail=1 ;; esac
+docker inspect -f '{{.Config.Image}}' openwearables-app-1 2>/dev/null | grep -q -- '-onas$' || { echo "app is not on the local -onas image (no Tonal provider); run wearables-build"; fail=1; }
+revoked=$(docker exec openwearables-db-1 psql -U open-wearables -d open-wearables -tAc "select count(*) from user_connection where provider = 'tonal' and status <> 'active'" 2>/dev/null)
+[ "${revoked:-0}" = 0 ] || { echo "$revoked Tonal connection(s) not active: rerun the Tonal connect step (README)"; fail=1; }
 [ "$(stat -c %a /etc/openwearables/env 2>/dev/null)" = 600 ] || { echo "/etc/openwearables/env missing or not mode 600"; fail=1; }
 exit $fail

@@ -1,8 +1,10 @@
 # Open Wearables production stack, from the docs' baseline (openwearables.io/docs/deployment/docker)
 # with the published images pinned. Secrets and settings come from /etc/openwearables/env.
-# Upgrade by bumping OW_VERSION below, then `wearables-compose pull && wearables-compose up -d`.
+# The backend is built locally by wearables-build (upstream plus /etc/openwearables/patches);
+# pull_policy: never keeps `pull` from looking for it on Docker Hub. Upgrade: see the README.
 x-backend: &backend
-  image: themomentum/open-wearables-backend:${OW_VERSION:-0.10.0}
+  image: local/open-wearables-backend:${OW_VERSION:-0.10.0}-onas
+  pull_policy: never
   env_file:
     - /etc/openwearables/env
   environment:
