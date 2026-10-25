@@ -6,6 +6,7 @@ import { ConfirmTyped, Freshness, Meter, Panel, StatusBadge } from '../component
 import { fmtBytes, fmtDuration, fmtPct, fmtRate } from '../lib/format';
 import { SERIES } from '../lib/palette';
 import { navigate } from '../App';
+import { CpuPanel } from './CpuPanel';
 
 function templateUrl(url: string | undefined, guest: Guest): string | undefined {
   if (!url) return undefined;
@@ -101,6 +102,8 @@ export function GuestsView({ state }: { state: DashboardState }) {
 
   return (
     <div className="view">
+      <CpuPanel state={state} />
+
       <Panel
         title="Activity"
         aside={<>

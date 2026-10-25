@@ -530,3 +530,20 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   .app-fill .machine-stage { height: auto; min-height: 420px; }
   .app-fill .machine-side { height: auto; min-height: 0; overflow-y: auto; padding-right: 2px; }
 }
+
+/* CPU breakdown (Guests tab) */
+.cpu-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; margin-bottom: 10px; }
+.cpu-legend-val { color: var(--ink); font-weight: 600; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.cpu-chart { position: relative; width: 100%; margin-bottom: 12px; }
+.cpu-chart svg { display: block; }
+.axis-label { fill: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.tt-sub { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin: 6px 0 2px; }
+.cpu-arc { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 8px 0 10px; border-top: 1px solid var(--hair-soft); color: var(--ink-2); }
+.cpu-arc-meter { display: inline-flex; align-items: center; gap: 8px; }
+.cpu-arc-meter .meter { width: 90px; }
+.cpu-table td:first-child { width: 60%; }
+.cpu-name { display: inline-flex; align-items: center; gap: 6px; }
+.cpu-explain { font-size: 12px; max-width: 640px; }
+.cpu-sub td:first-child { padding-left: 34px; }
+.cpu-sub .cpu-name { font-family: var(--mono); font-size: 12px; }
+a.host-stat { color: inherit; } a.host-stat:hover { text-decoration: none; color: var(--ink); }

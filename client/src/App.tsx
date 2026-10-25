@@ -41,7 +41,8 @@ function HostStrip({ state, connected }: { state: DashboardState; connected: boo
       <span className="host-name"><strong>{h?.hostname ?? 'wtr'}</strong><span className="muted">{h?.pveVersion?.replace('pve-manager/', 'PVE ').split('/')[0]}</span></span>
       {h && (
         <>
-          <span className="host-stat"><span className="muted">CPU</span>{fmtPct(h.cpu.pct / 100)}<span className="muted">of {h.cpu.cores}</span></span>
+          <a className="host-stat" href="#/guests" title="Where the CPU goes">
+            <span className="muted">CPU</span>{fmtPct(h.cpu.pct / 100)}<span className="muted">of {h.cpu.cores}</span></a>
           <span className="host-stat"><span className="muted">Memory</span>{fmtBytes(h.mem.usedBytes)}<span className="muted">{fmtPct(memPct)}</span></span>
           <span className="host-stat"><span className="muted">Load</span>{h.load.load1.toFixed(2)}</span>
           <span className="host-stat"><span className="muted">Up</span>{fmtDuration(h.uptimeSeconds)}</span>

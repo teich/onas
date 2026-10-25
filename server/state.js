@@ -60,6 +60,8 @@ const q = {
   hwMemory: db.prepare('SELECT * FROM hw_memory ORDER BY slot'),
   hwDisks: db.prepare('SELECT * FROM hw_disks ORDER BY pos'),
   hwNics: db.prepare('SELECT * FROM hw_nics ORDER BY pos'),
+  cpuHost: db.prepare('SELECT * FROM cpu_host WHERE id = 1'),
+  cpuConsumers: db.prepare('SELECT * FROM cpu_consumers ORDER BY cores DESC'),
 };
 
 // onas's own VMID: its bind mounts translate share paths (/srv/media) into host datasets.
@@ -113,11 +115,43 @@ function buildHardware() {
   };
 }
 
+// Where the CPU goes, from the `cpu` collector; null until it has two samples to compare.
+function buildCpu(guests) {
+  const h = q.cpuHost.get();
+  if (!h) return null;
+  const names = new Map(guests.map(g => [String(g.vmid), g.name]));
+  const all = q.cpuConsumers.all().map(c => ({
+    key: c.key,
+    kind: c.kind,
+    ref: c.ref,
+    name: c.kind === 'guest' ? names.get(c.ref) ?? `guest ${c.ref}` : c.name,
+    cores: c.cores,
+  }));
+  return {
+    sampledAt: h.sampled_at,
+    intervalS: h.interval_s,
+    cores: h.cores,
+    busyCores: h.busy_cores,
+    iowaitCores: h.iowait_cores,
+    consumers: all.filter(c => c.kind !== 'kthread'),
+    kernelThreads: all.filter(c => c.kind === 'kthread').slice(0, 8),
+    arc: h.arc_size == null ? null : {
+      sizeBytes: h.arc_size,
+      targetBytes: h.arc_target,
+      maxBytes: h.arc_max,
+      dnodeBytes: h.dnode_size,
+      dnodeLimitBytes: h.dnode_limit,
+      pruneRate: h.arc_prune_rate,
+    },
+  };
+}
+
 function buildState() {
   const h = q.host.get();
   const mounts = q.mounts.all();
   const collectors = scheduler.status();
   const updates = q.updates.all();
+  const guests = q.guests.all();
   const count = kind => updates.filter(u => u.kind === kind).length;
   return {
     host: h ? {
@@ -132,7 +166,8 @@ function buildState() {
       timestamp: h.updated_at,
     } : null,
     hardware: buildHardware(),
-    guests: q.guests.all().map(g => ({
+    cpu: buildCpu(guests),
+    guests: guests.map(g => ({
       vmid: g.vmid,
       name: g.name,
       type: g.type,

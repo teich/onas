@@ -224,9 +224,46 @@ export interface HardwareState {
   nics: HardwareNic[];
 }
 
+// Where the host's CPU goes, from the `cpu` collector (every 10 s), in host cores. Guests,
+// services and the kernel add up to busyCores; kernelThreads break the kernel row down.
+export interface CpuConsumer {
+  key: string;                  // guest-108, svc-pvestatd, user, kernel, k-arc_prune
+  kind: 'guest' | 'service' | 'kernel' | 'kthread';
+  ref: string | null;           // vmid, systemd unit, or kernel thread family
+  name: string;
+  cores: number;
+}
+
+export interface CpuState {
+  sampledAt: string;
+  intervalS: number;
+  cores: number;
+  busyCores: number;
+  iowaitCores: number;          // idle waiting on disk, not part of busyCores
+  consumers: CpuConsumer[];     // largest first
+  kernelThreads: CpuConsumer[];
+  arc: {
+    sizeBytes: number;
+    targetBytes: number;
+    maxBytes: number;
+    dnodeBytes: number;
+    dnodeLimitBytes: number;    // past this, arc_prune spins evicting dnodes
+    pruneRate: number | null;   // arc_prune calls per second
+  } | null;
+}
+
+export interface CpuHistory {
+  hours: number;
+  step: number;
+  start: number;
+  end: number;
+  series: Array<{ key: string; values: Array<number | null> }>; // key: consumer key, or 'busy'
+}
+
 export interface DashboardState {
   host: HostHealth | null;
   hardware: HardwareState | null;
+  cpu: CpuState | null;
   guests: Guest[];
   pools: Pool[];
   datasets: Dataset[];

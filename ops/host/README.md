@@ -30,6 +30,13 @@ Customizations on the host itself. `ops/bin/push host` installs `files/`; `ops/b
 - **Encryption key:** `/etc/pve/priv/storage/pbs-lxc.enc` (fingerprint `fd:39:3b:a3…`), the same key PVE uses for guest backups. Its paper key is in 1Password ("WTR PBS encryption key"). **Without it the B2 copy can't be restored.**
 - The uplink is 40 Mbps, so the PBS endpoint caps B2 uploads at 3 MiB/s (about 25 Mbps). The first upload of about 5.6 TB takes about 3 weeks; until it finishes, each nightly run waits for the previous one to end.
 - Status: `journalctl -u wtr-offsite-backup`, or the `b2-offsite` datastore in the PBS UI.
+- **One group per dataset (2026-10-25):** the first runs sent everything as a single group, `host/wtr`. The Oct 21 run died after 3 days on a B2 "connection reset", so it left no snapshot and the next run had no manifest to compare against: every night re-read all 5.6 TB. Now each dataset is its own group (`host/wtr-apps`, `host/wtr-photos`, …) and a failure only costs that dataset. The script carries on past a failed dataset and exits 1 at the end. Chunks already in B2 are not uploaded again, so the switch costs one more full read, not another upload. The old `host/wtr` group can be pruned once every new group has a snapshot.
+
+## ZFS ARC tuning (2026-10-25)
+
+**Why:** host CPU sat at about 15% during the offsite backup's file walk. Dnodes (ZFS's per-file metadata) reached 1.3 GiB against a limit of 651 MB, 10% of a 6 GiB ARC, so the kernel thread `arc_prune` spun on a whole core trying to evict them.
+
+**What:** `etc/modprobe.d/zfs.conf` raises `zfs_arc_max` from 6 to 12 GiB (WTR has 62 GiB, about 17 GiB was free) and `zfs_arc_dnode_limit_percent` from 10 to 25, a 3 GiB dnode limit. The file is copied into the initramfs, so after changing it run `update-initramfs -u -k all`, and set the values live under `/sys/module/zfs/parameters` (or reboot). The old file is at `/root/zfs.conf.pre-arc-tuning`. `check.sh` checks the live values, that the initramfs is newer than the file, and that dnodes stay under the limit.
 
 ## Front LCD shows live status (2026-10-22)
 

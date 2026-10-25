@@ -1,4 +1,4 @@
-import type { DashboardState, HistoryMatrix, Share } from './types';
+import type { CpuHistory, DashboardState, HistoryMatrix, Share } from './types';
 
 async function send<T>(url: string, init: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -66,6 +66,12 @@ export function setUserPassword(username: string, password: string) {
 
 export async function fetchHistory(metric: string, hours: number): Promise<HistoryMatrix> {
   const res = await fetch(`/api/history?metric=${encodeURIComponent(metric)}&hours=${hours}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCpuHistory(hours: number): Promise<CpuHistory> {
+  const res = await fetch(`/api/cpu?hours=${hours}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }

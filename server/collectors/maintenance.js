@@ -1,7 +1,8 @@
 // Roll up and prune history (every 5 minutes). The host and guest 5-minute series come from
 // Proxmox RRD data (collectors/history.js); raw 10-second samples are kept for live views.
-// Series with no RRD counterpart, the hardware collector's disk.*, nic.* and cpu.temp, are
-// averaged here from the raw samples so they have history beyond the 48 hours raw keeps.
+// Series with no RRD counterpart (the hardware collector's disk.*, nic.* and cpu.temp, the cpu
+// collector's cpu.* and zfs.arc.*) are averaged here from the raw samples so they have history
+// beyond the 48 hours raw keeps.
 // Pruning is by age only, so a new series needs nothing here unless it needs a rollup.
 const { db, transaction } = require('../db');
 
@@ -9,7 +10,7 @@ const RAW_KEEP_S = 48 * 3600;
 const ROLLUP_KEEP_S = 90 * 86400;
 const RUNS_KEEP_MS = 7 * 86400_000;
 const BUCKET_S = 300;
-const ROLLUP_SERIES = "(series LIKE 'disk.%' OR series LIKE 'nic.%' OR series = 'cpu.temp')";
+const ROLLUP_SERIES = "(series LIKE 'disk.%' OR series LIKE 'nic.%' OR series LIKE 'cpu.%' OR series LIKE 'zfs.arc.%')";
 
 let rolledUpTo = null; // start of the newest bucket already stored; read from the table on the first run
 

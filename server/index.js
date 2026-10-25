@@ -10,7 +10,7 @@ const { buildState, readGuestsConfig, writeGuestsConfig } = require('./state');
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, '..', 'public');
 
-for (const name of ['pve', 'hardware', 'zfs', 'smb', 'mounts', 'history', 'disks', 'updates', 'maintenance']) {
+for (const name of ['pve', 'hardware', 'cpu', 'zfs', 'smb', 'mounts', 'history', 'disks', 'updates', 'maintenance']) {
   for (const def of require(`./collectors/${name}`)) scheduler.register(def);
 }
 
@@ -111,6 +111,32 @@ app.get('/api/history', (req, res) => {
     metric, hours, step, start, end, max,
     series: [...bySeries.entries()].map(([id, values]) => ({ id, values })),
   });
+});
+
+// CPU by consumer over time, for the stacked chart: ?hours=1. Raw 10-second samples up to 6 hours
+// (averaged into steps), 5-minute averages beyond. A series with no sample in a step is null.
+app.get('/api/cpu', (req, res) => {
+  const hours = Math.min(24 * 30, Math.max(1, Number(req.query.hours) || 1));
+  const raw = hours <= 6;
+  const step = raw ? Math.max(10, hours * 10) : hours <= 48 ? 300 : 1800;
+  const now = Math.floor(Date.now() / 1000);
+  const end = now - (now % step);
+  const start = end - hours * 3600;
+  const rows = db.prepare(raw
+    ? `SELECT series, ts - (ts % $step) AS bucket, AVG(value) AS value FROM metrics
+       WHERE ts >= $start AND ts < $end AND (series LIKE 'cpu.c.%' OR series = 'cpu.busy') GROUP BY series, bucket`
+    : `SELECT series, ts - (ts % $step) AS bucket, AVG(avg) AS value FROM metrics_5m
+       WHERE ts >= $start AND ts < $end AND (series LIKE 'cpu.c.%' OR series = 'cpu.busy') GROUP BY series, bucket`,
+  ).all({ step, start, end });
+  const count = (end - start) / step;
+  const bySeries = new Map();
+  for (const row of rows) {
+    const key = row.series === 'cpu.busy' ? 'busy' : row.series.slice('cpu.c.'.length);
+    if (!bySeries.has(key)) bySeries.set(key, new Array(count).fill(null));
+    const i = (row.bucket - start) / step;
+    if (i >= 0 && i < count) bySeries.get(key)[i] = row.value;
+  }
+  res.json({ hours, step, start, end, series: [...bySeries].map(([key, values]) => ({ key, values })) });
 });
 
 app.use('/api/guests', require('./routes/guests'));

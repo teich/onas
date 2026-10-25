@@ -11,6 +11,14 @@ systemctl is-active -q wtr-offsite-backup.timer || { echo "wtr-offsite-backup.ti
 systemctl is-failed -q wtr-offsite-backup.service && { echo "last offsite backup failed (journalctl -u wtr-offsite-backup)"; fail=1; }
 [ -s /etc/wtr-offsite-backup.env ] || { echo "/etc/wtr-offsite-backup.env missing"; fail=1; }
 [ -s /etc/pve/priv/storage/pbs-lxc.enc ] || { echo "PBS encryption key missing"; fail=1; }
+# ZFS ARC tuning (etc/modprobe.d/zfs.conf), live and in the initramfs that applies it at boot.
+zp=/sys/module/zfs/parameters
+[ "$(cat $zp/zfs_arc_max)" = 12884901888 ] || { echo "zfs_arc_max is $(cat $zp/zfs_arc_max), not 12 GiB"; fail=1; }
+[ "$(cat $zp/zfs_arc_dnode_limit_percent)" = 25 ] || { echo "zfs_arc_dnode_limit_percent is not 25"; fail=1; }
+[ "/boot/initrd.img-$(uname -r)" -nt /etc/modprobe.d/zfs.conf ] \
+	|| { echo "initramfs older than /etc/modprobe.d/zfs.conf (run update-initramfs -u -k all)"; fail=1; }
+awk '$1 == "dnode_size" { d = $3 } $1 == "arc_dnode_limit" { l = $3 } END { exit !(d > l) }' /proc/spl/kstat/zfs/arcstats \
+	&& { echo "ZFS dnodes over the ARC dnode limit (arc_prune will spin)"; fail=1; }
 # Front LCD: wtr-lcd running, the panel taking frames, and those frames coming from onas.
 [ -e /dev/serial/by-id/usb-Synwit_USB_Virtual_COM-if00 ] || { echo "front LCD USB device missing"; fail=1; }
 lcd() { sed -n "s/^$1=//p" /run/wtr-lcd/status 2>/dev/null; }
