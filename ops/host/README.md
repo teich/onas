@@ -51,3 +51,14 @@ Customizations on the host itself. `ops/bin/push host` installs `files/`; `ops/b
 - **State:** `/run/wtr-lcd/status`: `source` (onas or fallback), `reason`, `fallback_since`, `acked` (the last frame the panel took) and `error`. `check.sh` reports these problems: the service isn't running, the panel has taken no frame for 2 minutes, or the screen has been on the fallback for 5 minutes.
 - **By hand:** `wtr-lcd --off` / `--on` switch the panel off and on (it keeps the last image); `wtr-lcd --once` draws one frame (stop the service first).
 - **To revert:** `systemctl disable --now wtr-lcd`, delete the unit and `/usr/local/sbin/wtr-lcd`, and `systemctl daemon-reload`. The panel keeps the "stopped" frame until it loses power; the logo is in its firmware and should come back after a power cycle.
+
+## Automatic ZFS snapshots with sanoid (2026-10-25)
+
+**Why:** `bulk/photos`, `bulk/videos`, `fast/apps` and `bulk/backups` are bind-mounted into guests, so vzdump skips them and they have no local backup copy; the offsite job sends them only to B2, and its first upload takes weeks. Guests write to them (immich has `/bulk/photos` read-write, arr has `/fast/apps`), so a bad update or a stray delete would have been unrecoverable. RAIDZ2 covers a failed disk, not a deleted file.
+
+**What:** `sanoid` from Debian (`apt install sanoid`, which also brings `libcapture-tiny-perl`, `libconfig-inifiles-perl` and `mbuffer`). `etc/sanoid/sanoid.conf` snapshots photos, videos and apps hourly ×24, daily ×14 and monthly ×6, and `bulk/backups` daily ×14 and monthly ×6. Not recursive, so `bulk/backups/pbs` is left alone. `sanoid.timer` runs every 15 minutes and only creates and prunes `autosnap_*` snapshots; manual snapshots are untouched. The package's `/etc/cron.d/sanoid` only runs on systems without systemd.
+
+- **Quota:** `bulk/photos` has `quota=4T` (not `refquota`), so snapshot space counts toward it. Deleted photos keep using quota until their last snapshot ages out (up to six months). There's about 1 TB of headroom; switching to `refquota=4T` would stop snapshots counting, if that ever matters.
+- **Restoring:** each dataset's snapshots are browsable read-only at `<mountpoint>/.zfs/snapshot/<name>/`, for example `/bulk/photos/.zfs/snapshot/autosnap_2026-10-25_10:06:33_daily/`. Copy files back from there, or `zfs rollback` for a whole dataset (it destroys newer snapshots).
+- `check.sh` checks sanoid is installed, its timer is active, and every dataset has a recent autosnap. onas's Backups tab shows each dataset's newest snapshot and flags any that has gone stale.
+- **To revert:** `systemctl disable --now sanoid.timer`, `apt remove sanoid`, delete `/etc/sanoid/sanoid.conf`, and `zfs destroy` the `autosnap_*` snapshots if their space is wanted back.

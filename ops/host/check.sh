@@ -34,4 +34,14 @@ elif [ $((now - ${acked:-${started:-0}})) -ge 120 ]; then
 elif [ "$(lcd source)" = fallback ] && [ -n "$since" ] && [ $((now - since)) -ge 300 ]; then
 	echo "front LCD on its own fallback for $(((now - since) / 60)) min: $(lcd reason)"; fail=1
 fi
+# Automatic ZFS snapshots (etc/sanoid/sanoid.conf): the timer runs, and each dataset has a
+# recent autosnap (hourly ones within 2 h, daily-only within 26 h).
+dpkg -s sanoid >/dev/null 2>&1 || { echo "sanoid not installed"; fail=1; }
+systemctl is-active -q sanoid.timer || { echo "sanoid.timer not active"; fail=1; }
+now=$(date +%s)
+for spec in bulk/photos:7200 bulk/videos:7200 fast/apps:7200 bulk/backups:93600; do
+	ds=${spec%%:*}; max=${spec#*:}
+	last=$(zfs list -Hp -t snapshot -o name,creation -s creation "$ds" 2>/dev/null | awk -v d="$ds@autosnap_" 'index($1, d) == 1 { t = $2 } END { print t + 0 }')
+	[ $((now - last)) -le "$max" ] || { echo "$ds has no autosnap in the last $((max / 3600)) h"; fail=1; }
+done
 exit $fail

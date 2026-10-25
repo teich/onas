@@ -16,6 +16,7 @@ const HOUR = 3600;
 const LOCAL_STALE_S = 26 * HOUR;   // guest backups run daily
 const OFFSITE_STALE_S = 50 * HOUR; // the sync runs two hours after them, and can take a while on 25 Mbps
 const EMPTY_BYTES = 64 * 1024 ** 2;
+const SNAPSHOT_STALE_S = 26 * HOUR; // the slowest sanoid template (bulk/backups) is daily
 
 let configCache = { mtimeMs: -1, value: { excluded: {}, notes: {} } };
 
@@ -154,6 +155,13 @@ function buildBackups(row, { guests, datasets, zfsSnapshots, now = Math.floor(Da
   if (uncovered.length) {
     add('warning', `${uncovered.length} dataset${uncovered.length > 1 ? 's have' : ' has'} no backup and no recorded reason`,
       uncovered.map(r => r.path).join(', ') + `. Add them to the offsite script (ops/host) or to ${CONFIG_FILE} with a reason.`);
+  }
+  // Data with no local backup copy relies on ZFS snapshots (sanoid, ops/host) between offsite runs.
+  const snapStale = dataRows.filter(r => ['offsite', 'partial', 'none'].includes(r.coverage)
+    && (!r.zfsSnapshotAt || now - Date.parse(r.zfsSnapshotAt) / 1000 > SNAPSHOT_STALE_S));
+  if (snapStale.length) {
+    add('warning', `${snapStale.length} dataset${snapStale.length > 1 ? 's have' : ' has'} no ZFS snapshot in the last ${SNAPSHOT_STALE_S / HOUR} hours`,
+      `${snapStale.map(r => `${r.path} (${r.zfsSnapshotAt ? `last ${ago(Date.parse(r.zfsSnapshotAt) / 1000, now)}` : 'none'})`).join(', ')}. Automatic snapshots come from sanoid on WTR (ops/host); check sanoid.timer.`);
   }
   const never = offsiteItems.filter(i => i.state !== 'done');
   if (never.length && host) {
