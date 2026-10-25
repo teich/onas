@@ -4,14 +4,14 @@ The helper server for the **Teich Health** iPhone app (code in `~/src/teich-heal
 
 ## What it is
 
-The phone is the store. The app reads Apple Health on the phone and keeps its own copy of everything else. This server only does what a phone does badly: it stays signed in to sources that have no public API, pulls from them every hour, keeps their raw responses, and hands each phone what changed (`GET /v1/changes?since=<cursor>`). Tonal is the only source today; Eight Sleep is next. Each source is a Go package with its own sign-in prompts, so connecting a new one needs no app change.
+The phone is the store. The app reads Apple Health on the phone and keeps its own copy of everything else. This server only does what a phone does badly: it stays signed in to sources that have no public API, pulls from them every hour, keeps their raw responses, and hands each phone what changed (`GET /v1/changes?since=<cursor>`). Sources: Tonal and Eight Sleep (added 2026-10-25; nightly sleep from the app API eightctl documents, signed in once with the password and kept signed in with a refresh token, so the password isn't stored). Each source is a Go package with its own sign-in prompts, so connecting a new one needs no app change.
 
 History (2026-10-24/25): this guest first ran Open Wearables 0.10.0 (Docker) with a Tonal provider patched in, and an earlier version of this server in front of it. Oren decided OW was too heavy for an app whose real store is the phone, so on 2026-10-25 OW was removed (containers, volumes, images, `/etc/openwearables`, the `wearables` and `wearables-api` Caddy routes; Caddyfile backup `Caddyfile.bak-2026-10-25-remove-ow` on 101). Its data wasn't kept: Health data is on the phones and Tonal's history comes back from Tonal. Docker is still installed but unused.
 
 ## How it runs
 
 - `teich-health.service` runs `/usr/local/bin/teich-health serve` as the `teich-health` user on :8100, with `/etc/teich-health/env` (mode 600; no secrets, just `LISTEN` and `DB_PATH`).
-- **State** is one SQLite file, `/var/lib/teich-health/teich-health.db`: people, paired phones (token hashes only), each person's connection to each source, and every raw record. **Source credentials are in it** (Tonal's id and refresh tokens, never passwords), so the directory is mode 700. Tonal rotates its refresh token on every use; the server saves the new one before doing anything else, and a person only has to sign in again if a refresh is rejected (the app then says "Sign in to Tonal again").
+- **State** is one SQLite file, `/var/lib/teich-health/teich-health.db`: people, paired phones (token hashes only), each person's connection to each source, and every raw record. **Source credentials are in it** (Tonal's and Eight Sleep's access and refresh tokens, never passwords), so the directory is mode 700. Tonal rotates its refresh token on every use; the server saves the new one before doing anything else, and a person only has to sign in again if a refresh is rejected (the app then says "Sign in to Tonal again").
 - **Deploy** the binary with `~/src/teich-health/server/deploy` (tests, cross-compile, push, restart). `pct push` can't overwrite the running binary and still exits 0, so the script pushes `teich-health.new` and renames it. The unit and `teich-health-admin` come from here (`ops/bin/push 123-wearables`).
 
 ## Admin
