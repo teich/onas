@@ -32,7 +32,7 @@ IP "dhcp → x" means the address isn't pinned (it may be a DHCP reservation, **
 | 109 | cloudflared-aac | VLAN5 dhcp → 192.168.5.57 | Connector for tunnel `BV_AAC` (AAC account). Only route: n8n.asphaltanchors.com → 192.168.5.214:5678, **dead since n8n was removed** | Token in the unit's command line; cloudflared 2026.3.0 (old); no PatchMon agent |
 | 110 | evcc | 192.168.2.20 | evcc solar/EV charging (:7070) | Stale Tailscale node "evcc" (offline 247 days) |
 | 111 | uptimekuma | dhcp → .115 | Uptime Kuma (:3001) | Homepage links to the DHCP IP |
-| 112 | proxmox-backup-server | 192.168.2.9 | PBS 4.2.8 (upgraded 2026-10-21); datastore `bulk-backups` = `/bulk/backups/pbs`; 128 GB S3 cache at `/mnt/s3-cache` | Daily GC + prune. No verify job yet. B2 offsite datastore in progress, see `ops/guests/112-proxmox-backup-server` |
+| 112 | proxmox-backup-server | 192.168.2.9 | PBS 4.2.8 (upgraded 2026-10-21); datastore `bulk-backups` = `/bulk/backups/pbs`; 128 GB S3 cache at `/mnt/s3-cache` | Daily GC; retention from the vzdump job; weekly verify (Sat 02:00). B2 offsite datastore in progress, see `ops/guests/112-proxmox-backup-server` |
 | 113 | aac-external-apps | VLAN5 | **stopped**. Abandoned Docker host from 2025-10-31; only `hello-world` was ever run | Cruft |
 | 114 | patchmon | dhcp reserved → .122 | PatchMon server (:3000) | Recreated 2026-10-21 08:36 |
 | 115 | 2core | 192.168.2.6 | In development: alternative UI for the property's Tucor irrigation controllers. Docker `/opt/2core` (:8787 on localhost; reached over Tailscale) | Code in `~/src` and GitHub |

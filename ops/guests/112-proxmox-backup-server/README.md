@@ -29,3 +29,12 @@ Configured with `proxmox-backup-manager` (PBS keeps it in `/etc/proxmox-backup/`
 - Sync job `bulk-to-b2` at 23:00: local pull from `bulk-backups`, **encrypted snapshots only**, 2 workers. Guest backups are encrypted from 2026-10-21 (PVE storage `pbs-lxc` has `encryption-key`). Older, unencrypted snapshots stay local and age out under the normal retention.
 - User `wtr-host@pbs` and token `wtr-host@pbs!offsite` have DatastoreBackup on `b2-offsite` only, for WTR's own file backups (see `ops/host`).
 - An older endpoint `cf-r2` (AAC account R2) predates this work and is unused.
+
+## Local datastore jobs (2026-10-25)
+
+**Why:** onas's new Backups tab flagged two things on `bulk-backups`. Its prune job (`default-bulk-backups-aebc491a-55`, daily) had no keep options: every night its log listed all 646 snapshots as "remove" and it ended with a warning. Nothing was actually removed, but a job whose log says "remove everything" is one PBS change away from doing it. And no verify job had ever checked that the local backups still restore.
+
+**What:**
+- Removed the prune job. Retention for guest backups comes from the PVE vzdump job (`prune-backups keep-last=7,keep-daily=7,keep-weekly=4,keep-monthly=12,keep-yearly=1`, applied after each backup).
+- Added verify job `bulk-backups-verify`: Saturdays 02:00, skips snapshots verified in the last 30 days. The first run reads the whole datastore (about 1.8 TB from the HDD pool) and will take hours.
+- Old files: `/root/prune.cfg.pre-2026-10-25` and `/root/verification.cfg.pre-2026-10-25`. `check.sh` checks the verify job exists and that no prune job lacks keep options.
