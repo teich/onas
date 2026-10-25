@@ -1,7 +1,7 @@
 From 9f64360e05c4ef58ba3726ea956cdf34b2c7ae8a Mon Sep 17 00:00:00 2001
 From: Oren Teich <oren@teich.net>
 Date: Sat, 24 Oct 2026 13:51:01 -0700
-Subject: [PATCH 2/2] Tonal: sign-in form for the pairing page
+Subject: [PATCH 2/3] Tonal: sign-in form for the pairing page
 
 Tonal's Auth0 only accepts its own app's redirect, so the authorization
 URL is our own form. It signs in with the password or email-code grant,

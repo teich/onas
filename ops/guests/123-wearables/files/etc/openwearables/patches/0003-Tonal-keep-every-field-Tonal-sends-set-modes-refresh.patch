@@ -1,0 +1,153 @@
+From 8bcf32e1f39993df35e8ce888989e4daf6bd00b0 Mon Sep 17 00:00:00 2001
+From: Oren Teich <oren@teich.net>
+Date: Sat, 24 Oct 2026 16:58:19 -0700
+Subject: [PATCH 3/3] Tonal: keep every field Tonal sends, set modes, refresh
+ stored workouts
+
+Each set now has chains/eccentric flags and extra weight, peak weight,
+spotter mode, average power and velocity, plus Tonal's raw summary and
+set activity under `tonal`. Movements keep their own Tonal fields and a
+final tonal_workout segment keeps the rest of the workout. A resync now
+rewrites segments of workouts already stored, since create_detail keeps
+existing rows.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../app/services/providers/tonal/workouts.py  | 40 ++++++++++++++++++-
+ .../providers/tonal/test_tonal_workouts.py    | 40 +++++++++++++++++++
+ 2 files changed, 78 insertions(+), 2 deletions(-)
+
+diff --git a/backend/app/services/providers/tonal/workouts.py b/backend/app/services/providers/tonal/workouts.py
+index 90ca0447..28c128b2 100644
+--- a/backend/app/services/providers/tonal/workouts.py
++++ b/backend/app/services/providers/tonal/workouts.py
+@@ -163,13 +163,24 @@ class TonalWorkouts(BaseWorkoutsTemplate):
+ 
+     @staticmethod
+     def _build_segments(activity: dict, summary: dict) -> list[dict]:
+-        """One segment per movement, with its sets. Weights in lb, power in W, ROM in inches."""
++        """One segment per movement, with its sets, then one `tonal_workout` segment.
++
++        Weights in lb, power in W, ROM in inches. Each set and movement also keeps
++        Tonal's own fields under `tonal`, and the last segment keeps the rest of the
++        workout, so nothing Tonal sent is lost. Tonal's raw set activity
++        (`tonal.activity`) gives weights per motor, so a two-handed set's are half
++        the summary's.
++        """
+         raw_sets = {s["id"]: s for s in activity.get("workoutSetActivity") or []}
+         segments = []
+         for movement in summary.get("movementSets") or []:
+             sets = []
+             for s in movement.get("sets") or []:
+                 raw = next((raw_sets[i] for i in s.get("associatedSetActivityIds") or [] if i in raw_sets), {})
++                weight = s.get("weight")
++                # Chains add weight toward the top of the rep; eccentric adds it on the way down.
++                chains = s.get("chainsWeight") or 0
++                eccentric = s.get("eccWeight") or 0
+                 sets.append(
+                     {
+                         "start": s.get("beginTime"),
+@@ -190,6 +201,17 @@ class TonalWorkouts(BaseWorkoutsTemplate):
+                         "struggling": raw.get("strugglingScore"),
+                         "reps_in_reserve": raw.get("repsInReserve"),
+                         "side": raw.get("movementSide"),
++                        "chains": bool(raw.get("chains") or chains),
++                        "chains_weight_lb": chains or None,
++                        "eccentric": bool(raw.get("eccentric") or eccentric),
++                        "eccentric_weight_lb": eccentric or None,
++                        "peak_weight_lb": weight + max(chains, eccentric) if weight is not None else None,
++                        "spotter_mode": s.get("spotterMode"),
++                        "weight_control_mode": s.get("weightControlMode"),
++                        "avg_power_w": (s.get("setMetrics") or {}).get("avgPower"),
++                        "avg_velocity": (s.get("setMetrics") or {}).get("avgVelocity"),
++                        "time_under_tension_s": s.get("totalConDuration"),
++                        "tonal": {"summary": s, "activity": raw},
+                     }
+                 )
+             segments.append(
+@@ -203,8 +225,18 @@ class TonalWorkouts(BaseWorkoutsTemplate):
+                     "work": movement.get("totalWork"),
+                     "avg_weight_lb": movement.get("avgWeight"),
+                     "sets": sets,
++                    "tonal": {k: v for k, v in movement.items() if k != "sets"},
+                 }
+             )
++        segments.append(
++            {
++                "type": "tonal_workout",
++                "tonal": {
++                    "summary": {k: v for k, v in summary.items() if k != "movementSets"},
++                    "activity": {k: v for k, v in activity.items() if k != "workoutSetActivity"},
++                },
++            }
++        )
+         return segments
+ 
+     def _strength_scores(
+@@ -267,7 +299,11 @@ class TonalWorkouts(BaseWorkoutsTemplate):
+             )
+             record, detail = self._normalize_workout((activity, summary), user_id)
+             created = event_record_service.create(db, record)
+-            event_record_service.create_detail(db, detail.model_copy(update={"record_id": created.id}))
++            saved = event_record_service.create_detail(db, detail.model_copy(update={"record_id": created.id}))
++            # create_detail keeps an existing row, so a resync wouldn't pick up what we now extract.
++            if saved.segments != detail.segments or saved.label != detail.label:
++                saved.segments, saved.label = detail.segments, detail.label
++                db.commit()
+             record_ids[activity["id"]] = created.id
+ 
+         scores = self._strength_scores(db, user_id, start, end, record_ids)
+diff --git a/backend/tests/providers/tonal/test_tonal_workouts.py b/backend/tests/providers/tonal/test_tonal_workouts.py
+index 118de191..cedf1fed 100644
+--- a/backend/tests/providers/tonal/test_tonal_workouts.py
++++ b/backend/tests/providers/tonal/test_tonal_workouts.py
+@@ -68,6 +68,46 @@ def test_normalize_workout(workouts: TonalWorkouts) -> None:
+     assert segment["sets"][0]["rom_in"] == 30.5
+ 
+ 
++def test_set_modes_and_raw_fields_kept(workouts: TonalWorkouts) -> None:
++    # A chains set as Tonal reports it: 160 lb base, 40 lb of chains at the top, per-motor raw values.
++    chains_set = {"repCount": 6, "weight": 160, "chainsWeight": 40, "spotterMode": "BURNOUT", "oneRepMax": 199,
++                  "setMetrics": {"avgPower": 2046.7}, "associatedSetActivityIds": ["set-2"]}  # fmt: skip
++    raw_set = {
++        "id": "set-2",
++        "chains": True,
++        "eccentric": False,
++        "baseWeight": 80,
++        "chainsWeight": 20,
++        "maxWeight": 99.8,
++    }
++    activity = {**ACTIVITY, "workoutSetActivity": [*ACTIVITY["workoutSetActivity"], raw_set]}
++    movement = {
++        "movementName": "Barbell Sumo Deadlift",
++        "movementId": "mov-2",
++        "bilateralMovementMetrics": {"peakPower": 8528},
++        "sets": [chains_set],
++    }
++    summary = {**SUMMARY, "movementSets": [movement]}
++
++    _, detail = workouts._normalize_workout((activity, summary), uuid4())
++
++    lift = detail.segments[0]["sets"][0]
++    assert lift["chains"]
++    assert not lift["eccentric"]
++    assert lift["chains_weight_lb"] == 40
++    assert lift["peak_weight_lb"] == 200
++    assert lift["spotter_mode"] == "BURNOUT"
++    assert lift["avg_power_w"] == 2046.7
++    assert lift["tonal"]["activity"]["maxWeight"] == 99.8
++    assert lift["tonal"]["summary"] == chains_set
++    assert detail.segments[0]["tonal"]["bilateralMovementMetrics"] == {"peakPower": 8528}
++    workout = detail.segments[-1]
++    assert workout["type"] == "tonal_workout"
++    assert workout["tonal"]["summary"]["programName"] == "12 Weeks to Unleash"
++    assert "movementSets" not in workout["tonal"]["summary"]
++    assert workout["tonal"]["activity"]["deviceId"] == "dev-1"
++
++
+ def test_unknown_training_type_is_strength(workouts: TonalWorkouts) -> None:
+     record, _ = workouts._normalize_workout((ACTIVITY, {**SUMMARY, "primaryTrainingTypeName": "New"}), uuid4())
+     assert record.type == WorkoutType.STRENGTH_TRAINING.value
+-- 
+2.54.0 (Apple Git-157)
+

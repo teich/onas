@@ -21,7 +21,7 @@ IP "dhcp → x" means the address isn't pinned (it may be a DHCP reservation, **
 | ID | Name | IP | What it is | Notes |
 |----|------|----|------------|-------|
 | 100 | haos (VM) | ? | Home Assistant OS | 2 c / 4 G |
-| 101 | caddy | 192.168.2.5 | TLS + reverse proxy for `*.teich.network` (home, evcc, immich, wearables) | Customized, see `ops/guests/101-caddy` |
+| 101 | caddy | 192.168.2.5 | TLS + reverse proxy for `*.teich.network` (home, evcc, immich, wearables, health-api) | Customized, see `ops/guests/101-caddy` |
 | 102 | homepage | 192.168.2.4 | gethomepage dashboard (:3000), home.teich.network. Config is managed in `ops/guests/102-homepage`; secrets live in `/opt/homepage/.env` | Mounts host `/`, `/bulk` and `/fast` read-only (for disk widgets?) |
 | 103 | immich | 192.168.2.13 | Immich 3.3.4 (bare-metal install, Postgres 16, Redis) | Photos from `/bulk/photos`. Also on Tailscale. 12 cores |
 | 104 | arr | dhcp → .119 | Docker: Jellyfin, Sonarr, Radarr, SABnzbd, qBittorrent, Audiobookshelf, Booklore (`grimmory` image), MariaDB | `/bulk/media`, `/fast/apps`; iGPU passthrough; Tailscale |
@@ -40,7 +40,7 @@ IP "dhcp → x" means the address isn't pinned (it may be a DHCP reservation, **
 | 117 | gamm | VLAN5 dhcp → 192.168.5.232 | **AAC** Google Ads MCP gateway, tailnet-only at `gamm.grouse-crested.ts.net` via tailscale serve | Code `~/src/aac/gamm`. Moved from the LAN (.218) to VLAN 5 on 2026-10-22 (snapshot `pre-vlan5`). Its PatchMon agent reports through the AAC → PatchMon firewall policy |
 | 119 | onas | dhcp → .189 | Samba shares (media, backups, photos, videos, roms) + this dashboard (:3000) | Customized, see `ops/guests/119-onas` (Node 24 from NodeSource, `onas.service`, 2026-10-22) |
 | 122 | books | VLAN5 dhcp → 192.168.5.149 | **AAC** SlowBooks Pro (Docker prod stack: app + Postgres 17), tailnet-only at `books.grouse-crested.ts.net` via tailscale serve | Created 2026-10-22, see `ops/guests/122-books`. No PatchMon agent yet |
-| 123 | wearables | 192.168.2.14 | Open Wearables 0.10.0 (Docker, published images: API, Celery, Postgres 18, Redis, portal). wearables.teich.network (portal) and wearables-api.teich.network (API) via Caddy | Created 2026-10-24, see `ops/guests/123-wearables`. No public URL, so provider webhooks can't reach it (pull sync only). No PatchMon agent yet |
+| 123 | wearables | 192.168.2.14 | Open Wearables 0.10.0 (Docker, published images: API, Celery, Postgres 18, Redis, portal). wearables.teich.network (portal) and wearables-api.teich.network (API) via Caddy. Also the Teich Health app backend (`teich-health.service`, Go, :8100, health-api.teich.network) | Created 2026-10-24, see `ops/guests/123-wearables`. No public URL, so provider webhooks can't reach it (pull sync only). No PatchMon agent yet |
 | 301 | acc-external-apps (VM) | VLAN5 | **stopped**. Second try at 113 (2025-11-12): Docker + virtiofs mount of `/fast/apps`; only `hello-world` was ever run | Cruft. Name has an "acc" typo |
 
 Removed 2026-10-21 09:05 by oren@pve (cruft, confirmed): 120 ollama, 121 n8n. The 2026-10-20 PBS backups of both still exist.

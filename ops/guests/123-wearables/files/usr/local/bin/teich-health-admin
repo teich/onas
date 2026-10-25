@@ -1,0 +1,8 @@
+#!/bin/sh
+# teich-health-admin users|pair <ow-user-id>|devices|revoke <device-id>
+# Runs the teich-health CLI as the service user, with the service's credentials and database.
+set -eu
+set -a
+. /etc/teich-health/env
+set +a
+exec runuser -u teich-health -- /usr/local/bin/teich-health "$@"
