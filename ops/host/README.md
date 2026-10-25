@@ -30,6 +30,7 @@ Customizations on the host itself. `ops/bin/push host` installs `files/`; `ops/b
 - **Encryption key:** `/etc/pve/priv/storage/pbs-lxc.enc` (fingerprint `fd:39:3b:a3…`), the same key PVE uses for guest backups. Its paper key is in 1Password ("WTR PBS encryption key"). **Without it the B2 copy can't be restored.**
 - The uplink is 40 Mbps, so the PBS endpoint caps B2 uploads at 3 MiB/s (about 25 Mbps). The first upload of about 5.6 TB takes about 3 weeks; until it finishes, each nightly run waits for the previous one to end.
 - Status: `journalctl -u wtr-offsite-backup`, or the `b2-offsite` datastore in the PBS UI.
+- **Restore tested (2026-10-25):** `host/wtr-apps/2026-10-25T17:28:03Z` restored to a scratch dataset with `proxmox-backup-client restore <snapshot> apps.pxar <dir> --keyfile /etc/pve/priv/storage/pbs-lxc.enc` (credentials from `/etc/wtr-offsite-backup.env`): 5.73 GiB in 13 min 48 s, about 7 MiB/s from B2. A checksum comparison (`rsync -anc`) against `/fast/apps` differed only in 46 files changed after the backup and 4 SQLite journal files deleted since; owners and permissions matched. Not yet tested: restoring with the paper key from 1Password instead of the key file on WTR.
 - **One group per dataset (2026-10-25):** the first runs sent everything as a single group, `host/wtr`. The Oct 21 run died after 3 days on a B2 "connection reset", so it left no snapshot and the next run had no manifest to compare against: every night re-read all 5.6 TB. Now each dataset is its own group (`host/wtr-apps`, `host/wtr-photos`, …) and a failure only costs that dataset. The script carries on past a failed dataset and exits 1 at the end. Chunks already in B2 are not uploaded again, so the switch costs one more full read, not another upload. The old `host/wtr` group can be pruned once every new group has a snapshot.
 
 ## ZFS ARC tuning (2026-10-25)
@@ -62,3 +63,12 @@ Customizations on the host itself. `ops/bin/push host` installs `files/`; `ops/b
 - **Restoring:** each dataset's snapshots are browsable read-only at `<mountpoint>/.zfs/snapshot/<name>/`, for example `/bulk/photos/.zfs/snapshot/autosnap_2026-10-25_10:06:33_daily/`. Copy files back from there, or `zfs rollback` for a whole dataset (it destroys newer snapshots).
 - `check.sh` checks sanoid is installed, its timer is active, and every dataset has a recent autosnap. onas's Backups tab shows each dataset's newest snapshot and flags any that has gone stale.
 - **To revert:** `systemctl disable --now sanoid.timer`, `apt remove sanoid`, delete `/etc/sanoid/sanoid.conf`, and `zfs destroy` the `autosnap_*` snapshots if their space is wanted back.
+
+## Failure email for the offsite backup (2026-10-25)
+
+**Why:** PBS and vzdump email on failure through PVE's notification system, but `wtr-offsite-backup` is a plain systemd unit. When it died on Oct 24 after three days, nothing said so; only `ops/bin/check` would have noticed, and only when someone ran it.
+
+**What:** `wtr-offsite-backup.service` has `OnFailure=notify-failure@%n.service`. `notify-failure@.service` runs `/usr/local/sbin/notify-failure <unit>`, which mails `systemctl status` and the unit's last 40 log lines (minus the once-a-minute progress lines) through Postfix to root@pam's address in Proxmox, the same address PVE's own notifications go to (`/etc/aliases` doesn't forward root). Any other unit can use it the same way.
+
+- To test it: `/usr/local/sbin/notify-failure wtr-offsite-backup.service --test` sends a mail marked as a test. Sent and accepted by Gmail on 2026-10-25.
+- `check.sh` checks the `OnFailure=` is in place.

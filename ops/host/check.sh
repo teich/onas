@@ -9,6 +9,8 @@ queued=$(mailq 2>/dev/null | grep -c '^[0-9A-F]')
 [ "$queued" -eq 0 ] || { echo "$queued messages stuck in the mail queue"; fail=1; }
 systemctl is-active -q wtr-offsite-backup.timer || { echo "wtr-offsite-backup.timer not active"; fail=1; }
 systemctl is-failed -q wtr-offsite-backup.service && { echo "last offsite backup failed (journalctl -u wtr-offsite-backup)"; fail=1; }
+[ "$(systemctl show -p OnFailure --value wtr-offsite-backup.service)" = "notify-failure@wtr-offsite-backup.service.service" ] \
+	|| { echo "wtr-offsite-backup has no failure email (OnFailure)"; fail=1; }
 [ -s /etc/wtr-offsite-backup.env ] || { echo "/etc/wtr-offsite-backup.env missing"; fail=1; }
 [ -s /etc/pve/priv/storage/pbs-lxc.enc ] || { echo "PBS encryption key missing"; fail=1; }
 # ZFS ARC tuning (etc/modprobe.d/zfs.conf), live and in the initramfs that applies it at boot.

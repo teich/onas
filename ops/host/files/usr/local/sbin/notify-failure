@@ -1,0 +1,17 @@
+#!/bin/sh
+# Email that a systemd unit failed, with the end of its journal. Managed in onas ops/host.
+# Used as OnFailure=notify-failure@%n.service (wtr-offsite-backup). Mail goes through the
+# Postfix relay to root@pam's address in Proxmox, the same one PVE's own notifications use.
+# Usage: notify-failure <unit> [--test]
+set -eu
+unit=${1:?usage: notify-failure <unit> [--test]}
+to=$(pvesh get /access/users/root@pam --output-format json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("email") or "")')
+[ -n "$to" ] || { echo "root@pam has no email address in Proxmox" >&2; exit 1; }
+subject="WTR: $unit failed"
+[ "${2:-}" = --test ] && subject="WTR: test of the failure email for $unit (nothing failed)"
+{
+	printf 'To: %s\nSubject: %s\nContent-Type: text/plain; charset=utf-8\n\n' "$to" "$subject"
+	systemctl status --no-pager --lines=0 "$unit" 2>&1 || true
+	printf '\nLast 40 log lines (journalctl -u %s):\n\n' "$unit"
+	journalctl -u "$unit" -n 40 --no-pager -o short-iso 2>&1 | grep -v ' processed .* uploaded ' || true
+} | /usr/sbin/sendmail -t

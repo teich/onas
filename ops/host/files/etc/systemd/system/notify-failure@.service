@@ -1,0 +1,7 @@
+[Unit]
+Description=Email that %i failed
+Documentation=file:///usr/local/sbin/notify-failure
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/notify-failure %i
