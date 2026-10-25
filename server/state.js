@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { db } = require('./db');
 const scheduler = require('./scheduler');
+const { buildBackups } = require('./backups-model');
 
 const CONFIG_DIR = process.env.ONAS_CONFIG_DIR || '/etc/onas';
 const GUESTS_CONFIG = path.join(CONFIG_DIR, 'guests.json');
@@ -62,6 +63,7 @@ const q = {
   hwNics: db.prepare('SELECT * FROM hw_nics ORDER BY pos'),
   cpuHost: db.prepare('SELECT * FROM cpu_host WHERE id = 1'),
   cpuConsumers: db.prepare('SELECT * FROM cpu_consumers ORDER BY cores DESC'),
+  backups: db.prepare('SELECT * FROM backup_state WHERE id = 1'),
 };
 
 // onas's own VMID: its bind mounts translate share paths (/srv/media) into host datasets.
@@ -153,7 +155,7 @@ function buildState() {
   const updates = q.updates.all();
   const guests = q.guests.all();
   const count = kind => updates.filter(u => u.kind === kind).length;
-  return {
+  const state = {
     host: h ? {
       hostname: h.hostname,
       kernel: h.kernel,
@@ -284,6 +286,8 @@ function buildState() {
     collectors,
     timestamp: new Date().toISOString(),
   };
+  state.backups = buildBackups(q.backups.get(), { guests: state.guests, datasets: state.datasets, zfsSnapshots: state.snapshots });
+  return state;
 }
 
 module.exports = { buildState, readGuestsConfig, writeGuestsConfig };

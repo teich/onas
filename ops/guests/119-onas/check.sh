@@ -12,4 +12,7 @@ health=$(node -e 'fetch("http://127.0.0.1:3000/api/health").then(async r => { co
 # The front LCD's frame (wtr-lcd on WTR fetches it): 240 x 94 RGB.
 lcd=$(node -e 'fetch("http://127.0.0.1:3000/api/lcd/frame").then(async r => { const n = (await r.arrayBuffer()).byteLength; console.log(r.status === 200 && n === 67680 ? "ok" : `HTTP ${r.status}, ${n} bytes`); }).catch(e => console.log("unreachable: " + e.message))')
 [ "$lcd" = ok ] || { echo "onas /api/lcd/frame: $lcd"; fail=1; }
+# The Backups tab's list of what is left out on purpose; without it every exclusion shows as a gap.
+node -e 'JSON.parse(require("fs").readFileSync("/etc/onas/backups.json", "utf8"))' 2>/dev/null \
+	|| { echo "/etc/onas/backups.json missing or not valid JSON"; fail=1; }
 exit $fail

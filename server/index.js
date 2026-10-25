@@ -10,7 +10,7 @@ const { buildState, readGuestsConfig, writeGuestsConfig } = require('./state');
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.join(__dirname, '..', 'public');
 
-for (const name of ['pve', 'hardware', 'cpu', 'zfs', 'smb', 'mounts', 'history', 'disks', 'updates', 'maintenance']) {
+for (const name of ['pve', 'hardware', 'cpu', 'backups', 'zfs', 'smb', 'mounts', 'history', 'disks', 'updates', 'maintenance']) {
   for (const def of require(`./collectors/${name}`)) scheduler.register(def);
 }
 

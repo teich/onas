@@ -547,3 +547,19 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 .cpu-sub td:first-child { padding-left: 34px; }
 .cpu-sub .cpu-name { font-family: var(--mono); font-size: 12px; }
 a.host-stat { color: inherit; } a.host-stat:hover { text-decoration: none; color: var(--ink); }
+
+/* Backups */
+.bk-findings { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.bk-detail { font-size: 12px; white-space: pre-line; margin-top: 2px; max-width: 900px; }
+.bk-allgood { padding: 4px 0; }
+.bk-running { display: flex; flex-direction: column; gap: 14px; }
+.bk-run { display: flex; flex-direction: column; gap: 6px; }
+.bk-run-head, .bk-run-item { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+.bk-run .meter { height: 6px; }
+.bk-run-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; }
+.bk-note { font-size: 12px; margin-top: 8px; max-width: 900px; }
+.bk-items { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.bk-stores { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.bk-store { display: flex; flex-direction: column; gap: 6px; }
+.mono { font-family: var(--mono); font-size: 12px; }
+.nowrap { white-space: nowrap; }

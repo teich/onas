@@ -9,12 +9,14 @@ import { SnapshotsView } from './views/SnapshotsView';
 import { GuestsView } from './views/GuestsView';
 import { ActivityView } from './views/ActivityView';
 import { MachineView } from './views/MachineView';
+import { BackupsView } from './views/BackupsView';
 
 const TABS = [
   { id: 'machine', label: 'Machine' },
   { id: 'storage', label: 'Storage' },
   { id: 'shares', label: 'Shares' },
   { id: 'snapshots', label: 'Snapshots' },
+  { id: 'backups', label: 'Backups' },
   { id: 'guests', label: 'Guests' },
   { id: 'activity', label: 'Activity' },
 ] as const;
@@ -91,6 +93,7 @@ export function App() {
             {route.tab === 'storage' && <StorageView state={state} />}
             {route.tab === 'shares' && <SharesView state={state} params={route.params} />}
             {route.tab === 'snapshots' && <SnapshotsView state={state} params={route.params} />}
+            {route.tab === 'backups' && <BackupsView state={state} />}
             {route.tab === 'guests' && <GuestsView state={state} />}
             {route.tab === 'activity' && <ActivityView state={state} />}
           </>

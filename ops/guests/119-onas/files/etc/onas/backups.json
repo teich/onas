@@ -1,0 +1,12 @@
+{
+  "excluded": {
+    "/bulk": "Only ISOs, container templates and the old vzdump folder: replaceable.",
+    "/bulk/media": "Movies and TV: replaceable.",
+    "/bulk/roms": "Replaceable.",
+    "/bulk/backups/pbs": "The local PBS datastore itself. PBS syncs its encrypted guest backups to B2.",
+    "/fast/subvol-112-disk-1": "PBS's S3 cache (backup=0). Rebuilt from B2."
+  },
+  "notes": {
+    "/bulk/backups": "Only AAC, Cadillac and m1-laptop go offsite. dump, template and DELETE-oren-m1-laptop are left out on purpose."
+  }
+}

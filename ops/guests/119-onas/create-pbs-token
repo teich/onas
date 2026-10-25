@@ -1,0 +1,23 @@
+#!/bin/sh
+# One-time: create the read-only PBS user and token onas uses for the Backups view, and store
+# the secret on LXC 119 (/etc/onas/pve.env, mode 600). Run by Oren; until it exists onas reads
+# PBS through `proxmox-backup-debug api` over SSH instead, which works but is slower.
+#   onas@pbs!onas: Audit on /   (datastores, snapshots, jobs and tasks; nothing it can change)
+# Rerunning replaces the token.
+set -eu
+HOST=${WTR_HOST:-root@192.168.2.2}
+ssh "$HOST" sh -s <<'ON_WTR'
+set -eu
+pbs() { pct exec 112 -- proxmox-backup-manager "$@"; }
+pbs user list --output-format json | grep -q '"onas@pbs"' || pbs user create onas@pbs --comment "onas dashboard (LXC 119), read-only; see onas ops/guests/119-onas"
+pbs acl update / Audit --auth-id onas@pbs
+pbs user delete-token onas@pbs onas >/dev/null 2>&1 || true
+# `user generate-token` has no JSON output; the API call returns { tokenid, value }.
+secret=$(pct exec 112 -- proxmox-backup-debug api create /access/users/onas@pbs/token/onas --comment "onas Backups view" --output-format json \
+	| python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
+pbs acl update / Audit --auth-id 'onas@pbs!onas'
+pct exec 119 -- sh -c 'umask 077; touch /etc/onas/pve.env; sed -i "/^PBS_TOKEN=/d" /etc/onas/pve.env'
+printf 'PBS_TOKEN=onas@pbs!onas:%s\n' "$secret" | pct exec 119 -- sh -c 'cat >> /etc/onas/pve.env'
+pct exec 119 -- systemctl restart onas
+echo "token stored in LXC 119:/etc/onas/pve.env; onas restarted"
+ON_WTR

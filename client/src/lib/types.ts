@@ -260,7 +260,87 @@ export interface CpuHistory {
   series: Array<{ key: string; values: Array<number | null> }>; // key: consumer key, or 'busy'
 }
 
+// Backups, from the `backups` collector (every 2 min) joined with guests and datasets on the
+// server (server/backups-model.js). Times are unix seconds.
+export interface BackupSnap {
+  time: number;
+  size: number | null;
+  encrypted: boolean;
+  verified: 'ok' | 'failed' | null;
+}
+
+export type BackupLevel = 'warning' | 'serious' | 'critical';
+
+export interface BackupFinding { level: BackupLevel; text: string; detail: string | null }
+
+export interface OffsiteItem {
+  name: string;
+  path: string;
+  group: string;
+  state: 'done' | 'uploading' | 'sent' | 'failed' | 'never';
+  snapshot: BackupSnap | null;
+  run: { state: string; started: number; finished: number | null; error: string | null; progress: { at: number; processed: number; uploaded: number } | null } | null;
+}
+
+export interface BackupsState {
+  collectedAt: number;
+  pbsVia: 'api' | 'ssh' | null;
+  localStore: string;
+  offsiteStore: string;
+  findings: BackupFinding[];
+  running: Array<{
+    kind: 'offsite' | 'pbs' | 'vzdump';
+    title: string;
+    detail: string | null;
+    startedAt: number | null;
+    item?: { name: string; path: string; startedAt: number | null } | null;
+    processedBytes?: number | null;
+    uploadedBytes?: number | null;
+    progressAt?: number | null;
+    totalBytes?: number | null;
+    done?: string[];
+    queued?: string[];
+  }>;
+  schedule: Array<{
+    id: string;
+    kind: 'vzdump' | 'sync' | 'prune' | 'verify' | 'gc' | 'offsite';
+    title: string;
+    what: string;
+    schedule: string | null;
+    enabled: boolean;
+    nextRun: number | null;
+    nextNote: string | null;
+    last: { state: string | null; start: number | null; end: number | null } | null;
+  }>;
+  guests: Array<{
+    vmid: number;
+    name: string;
+    type: 'lxc' | 'vm';
+    status: string;
+    inJob: boolean | null;
+    local: BackupSnap | null;
+    localCount: number;
+    offsite: BackupSnap | null;
+    offsiteCount: number;
+    problems: Array<{ level: BackupLevel; text: string }>;
+  }>;
+  data: Array<{
+    dataset: string;
+    path: string;
+    sizeBytes: number;
+    coverage: 'offsite' | 'partial' | 'excluded' | 'guest' | 'empty' | 'none';
+    guest: number | null;
+    reason: string | null;
+    note: string | null;
+    offsite: OffsiteItem[];
+    zfsSnapshotAt: string | null;
+  }>;
+  offsite: OffsiteItem[];
+  datastores: Array<{ store: string; backend: string; comment: string; total: number | null; used: number | null; avail: number | null; estimatedFull: number | null; error: string | null }>;
+}
+
 export interface DashboardState {
+  backups: BackupsState | null;
   host: HostHealth | null;
   hardware: HardwareState | null;
   cpu: CpuState | null;
