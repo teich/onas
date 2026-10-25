@@ -1,3 +1,0 @@
-#!/bin/sh
-# docker compose for the Open Wearables stack, with the project and env file filled in.
-exec docker compose -p openwearables -f /etc/openwearables/compose.yml --env-file /etc/openwearables/env "$@"
