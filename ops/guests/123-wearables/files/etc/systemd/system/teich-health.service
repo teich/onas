@@ -1,0 +1,23 @@
+# Backend for the Teich Health iPhone app, in front of Open Wearables. See ops/guests/123-wearables/README.md.
+# The binary is deployed from ~/src/teich-health (server/deploy).
+[Unit]
+Description=Teich Health backend
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/teich-health/env
+ExecStart=/usr/local/bin/teich-health serve
+User=teich-health
+Group=teich-health
+StateDirectory=teich-health
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

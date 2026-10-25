@@ -15,4 +15,7 @@ docker inspect -f '{{.Config.Image}}' openwearables-app-1 2>/dev/null | grep -q 
 revoked=$(docker exec openwearables-db-1 psql -U open-wearables -d open-wearables -tAc "select count(*) from user_connection where provider = 'tonal' and status <> 'active'" 2>/dev/null)
 [ "${revoked:-0}" = 0 ] || { echo "$revoked Tonal connection(s) not active: rerun the Tonal connect step (README)"; fail=1; }
 [ "$(stat -c %a /etc/openwearables/env 2>/dev/null)" = 600 ] || { echo "/etc/openwearables/env missing or not mode 600"; fail=1; }
+systemctl is-active -q teich-health || { echo "teich-health.service not running"; fail=1; }
+curl -sf http://127.0.0.1:8100/healthz >/dev/null || { echo "teich-health /healthz failing (can it reach OW with its API key?)"; fail=1; }
+[ "$(stat -c %a /etc/teich-health/env 2>/dev/null)" = 600 ] || { echo "/etc/teich-health/env missing or not mode 600"; fail=1; }
 exit $fail
